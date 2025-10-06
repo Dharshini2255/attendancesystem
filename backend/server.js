@@ -17,7 +17,7 @@ mongoose.connect(process.env.MONGO_URI, {
 }).then(() => console.log("✅ MongoDB Connected"))
   .catch(err => console.error("❌ MongoDB Connection Error:", err));
 
-// ------------------- User Schema -------------------
+// ------------------- Schemas -------------------
 const userSchema = new mongoose.Schema({
   name: String,
   regNo: String,
@@ -35,12 +35,11 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model("User", userSchema);
 
-// ------------------- Attendance Schema -------------------
 const attendanceSchema = new mongoose.Schema({
   studentId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   studentName: String,
   regNo: String,
-  date: String, // "YYYY-MM-DD"
+  date: String,
   periods: [
     {
       periodNumber: Number,
@@ -50,7 +49,6 @@ const attendanceSchema = new mongoose.Schema({
 });
 const Attendance = mongoose.model("Attendance", attendanceSchema);
 
-// ------------------- Ping Schema -------------------
 const pingSchema = new mongoose.Schema({
   studentId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   studentName: String,
@@ -254,7 +252,7 @@ app.get('/attendance/today/:studentId', async (req, res) => {
     const today = new Date().toISOString().slice(0, 10);
 
     const record = await Attendance.findOne({ studentId, date: today });
-        if (!record) {
+    if (!record) {
       return res.status(200).json({ periods: [] });
     }
 
@@ -262,7 +260,6 @@ app.get('/attendance/today/:studentId', async (req, res) => {
       periodNumber: p.periodNumber,
       status: p.status
     }));
-
     res.status(200).json({
       date: today,
       studentName: record.studentName,
@@ -274,5 +271,9 @@ app.get('/attendance/today/:studentId', async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
+
+// ------------------- Server Startup -------------------
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
