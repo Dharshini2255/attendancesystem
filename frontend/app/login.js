@@ -1,5 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
+import * as SecureStore from 'expo-secure-store';
 import {
   Alert,
   Button,
@@ -33,10 +34,13 @@ export default function LoginScreen() {
       const data = await response.json();
 
       if (response.ok) {
+        // ✅ Store user info securely
+        await SecureStore.setItemAsync('user', JSON.stringify(data.user));
+
+        // ✅ Show welcome message and navigate
         Alert.alert('✅ Login Successful', `Welcome ${data.user.name}`, [
           { text: 'Continue', onPress: () => router.replace('/home') }
         ]);
-        // TODO: Store user info in context or local storage if needed
       } else {
         Alert.alert('❌ Login Failed', data.error || 'Invalid credentials');
       }
@@ -97,4 +101,3 @@ const styles = StyleSheet.create({
     borderColor: '#555'
   }
 });
-                  

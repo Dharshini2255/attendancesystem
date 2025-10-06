@@ -19,72 +19,69 @@ mongoose.connect(process.env.MONGO_URI, {
 
 // ------------------- User Schema -------------------
 const userSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  regNo: { type: String, required: true },
-  class: { type: String, required: true },
-  year: { type: String, required: true },
-  phone: { type: String, required: true },
-  username: { type: String, required: true, unique: true },
-  email: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
-  uuid: { type: String, required: true, unique: true }, // ✅ Added UUID
+  name: String,
+  regNo: String,
+  class: String,
+  year: String,
+  phone: String,
+  username: { type: String, unique: true },
+  email: { type: String, unique: true },
+  password: String,
+  uuid: { type: String, unique: true },
   location: {
-    latitude: { type: Number },
-    longitude: { type: Number }
-  },
+    latitude: Number,
+    longitude: Number
+  }
 });
-
 const User = mongoose.model("User", userSchema);
 
 // ------------------- Attendance Schema -------------------
 const attendanceSchema = new mongoose.Schema({
-  studentId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  date: { type: Date, required: true },
+  studentId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  studentName: String,
+  regNo: String,
+  date: String, // "YYYY-MM-DD"
   periods: [
     {
       periodNumber: Number,
-      timestamps: {
-        start: { type: Boolean, default: false },
-        afterStart15: { type: Boolean, default: false },
-        beforeEnd10: { type: Boolean, default: false },
-        end: { type: Boolean, default: false }
-      },
-      present: { type: Boolean, default: false }
+      status: { type: String, enum: ['present', 'absent'] }
     }
   ]
 });
-
 const Attendance = mongoose.model("Attendance", attendanceSchema);
+
+// ------------------- Ping Schema -------------------
+const pingSchema = new mongoose.Schema({
+  studentId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  studentName: String,
+  regNo: String,
+  periodNumber: Number,
+  timestampType: String,
+  location: {
+    latitude: Number,
+    longitude: Number
+  },
+  timestamp: { type: Date, default: Date.now }
+});
+const Ping = mongoose.model("Ping", pingSchema);
 
 // ------------------- Validation Routes -------------------
 app.post('/check-student', async (req, res) => {
-  try {
-    const { name, regNo } = req.body;
-    const student = await User.findOne({ name, regNo });
-    res.json({ exists: !!student });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  const { name, regNo } = req.body;
+  const student = await User.findOne({ name, regNo });
+  res.json({ exists: !!student });
 });
 
 app.post('/check-username', async (req, res) => {
-  try {
-    const { username } = req.body;
-    const user = await User.findOne({ username });
-    res.json({ exists: !!user });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  const { username } = req.body;
+  const user = await User.findOne({ username });
+  res.json({ exists: !!user });
 });
 
 app.post('/check-email', async (req, res) => {
-  try {
-    const { email } = req.body;
-    const user = await User.findOne({ email });
-    res.json({ exists: !!user });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  const { email } = req.body;
+  const user = await User.findOne({ email });
+  res.json({ exists: !!user });
 });
 
 // ------------------- Signup Route -------------------
@@ -108,8 +105,7 @@ app.post('/signup', async (req, res) => {
     const existsUuid = await User.findOne({ uuid });
     if (existsUuid) return res.status(400).json({ error: "UUID already registered" });
 
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
+    const hashedPassword = await bcrypt.hash(password, 10);
 
     const newUser = new User({
       name,
@@ -137,23 +133,16 @@ app.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body;
 
-    if (!username || !password) {
-      return res.status(400).json({ error: "Username and password are required" });
-    }
-
     const user = await User.findOne({ username });
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
-    }
+    if (!user) return res.status(404).json({ error: "User not found" });
 
     const passwordMatch = await bcrypt.compare(password, user.password);
-    if (!passwordMatch) {
-      return res.status(401).json({ error: "Invalid password" });
-    }
+    if (!passwordMatch) return res.status(401).json({ error: "Invalid password" });
 
     res.json({
       message: "✅ Login successful",
       user: {
+        _id: user._id,
         name: user.name,
         regNo: user.regNo,
         class: user.class,
@@ -171,21 +160,18 @@ app.post('/login', async (req, res) => {
   }
 });
 
-// ------------------- Attendance Routes -------------------
+// ------------------- Attendance Ping Route -------------------
 app.post('/attendance/mark', async (req, res) => {
   try {
     const { studentId, periodNumber, timestampType, location } = req.body;
 
-    if (!studentId || !periodNumber || !timestampType || !location) {
-      return res.status(400).json({ error: "Required fields missing" });
-    }
+    const student = await User.findById(studentId);
+    if (!student) return res.status(404).json({ error: "Student not found" });
 
-    // ✅ College location (replace with your actual coordinates)
-    const collegeLocation = { latitude: 12.9716, longitude: 77.5946 };
+    const collegeLocation = { latitude: 12.8005328, longitude: 80.0388091 };
 
-    // ✅ Calculate distance using Haversine formula
     const toRad = (value) => (value * Math.PI) / 180;
-    const R = 6371000; // Earth radius in meters
+    const R = 6371000;
     const dLat = toRad(location.latitude - collegeLocation.latitude);
     const dLon = toRad(location.longitude - collegeLocation.longitude);
     const lat1 = toRad(collegeLocation.latitude);
@@ -201,39 +187,92 @@ app.post('/attendance/mark', async (req, res) => {
       return res.status(403).json({ error: "Outside college location. Attendance not marked." });
     }
 
-    let today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const ping = new Ping({
+      studentId,
+      studentName: student.name,
+      regNo: student.regNo,
+      periodNumber,
+      timestampType,
+      location
+    });
+    await ping.save();
 
-    let record = await Attendance.findOne({ studentId, date: today });
+    const today = new Date().toISOString().slice(0, 10);
+    const startOfDay = new Date(`${today}T00:00:00`);
+    const endOfDay = new Date(`${today}T23:59:59`);
 
-    if (!record) {
-      record = new Attendance({
-        studentId,
-        date: today,
-        periods: Array.from({ length: 7 }, (_, i) => ({
-          periodNumber: i + 1,
-          timestamps: { start: false, afterStart15: false, beforeEnd10: false, end: false },
-          present: false
-        }))
-      });
+    const allPings = await Ping.find({
+      studentId,
+      periodNumber,
+      timestamp: { $gte: startOfDay, $lte: endOfDay }
+    });
+
+    const validPings = allPings.filter(p => {
+      const dLat = toRad(p.location.latitude - collegeLocation.latitude);
+      const dLon = toRad(p.location.longitude - collegeLocation.longitude);
+      const lat1 = toRad(collegeLocation.latitude);
+      const lat2 = toRad(p.location.latitude);
+      const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c <= 100;
+    });
+
+    if (validPings.length === 4) {
+      let attendance = await Attendance.findOne({ studentId, date: today });
+
+      if (!attendance) {
+        attendance = new Attendance({
+          studentId,
+          studentName: student.name,
+          regNo: student.regNo,
+          date: today,
+          periods: []
+        });
+      }
+
+      const existingPeriod = attendance.periods.find(p => p.periodNumber === periodNumber);
+      if (!existingPeriod) {
+        attendance.periods.push({ periodNumber, status: 'present' });
+      }
+
+      await attendance.save();
     }
 
-    let period = record.periods.find(p => p.periodNumber === periodNumber);
-    if (!period) return res.status(400).json({ error: "Invalid period number" });
-
-    period.timestamps[timestampType] = true;
-    const countTrue = Object.values(period.timestamps).filter(v => v).length;
-    period.present = countTrue >= 3;
-
-    await record.save();
-    res.json({ message: "Attendance marked", period });
+    res.json({ message: "Ping recorded" });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to mark attendance" });
   }
 });
 
+// ------------------- Attendance Summary Route -------------------
+app.get('/attendance/today/:studentId', async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    const today = new Date().toISOString().slice(0, 10);
 
-// ------------------- Server Start -------------------
+    const record = await Attendance.findOne({ studentId, date: today });
+        if (!record) {
+      return res.status(200).json({ periods: [] });
+    }
+
+    const summary = record.periods.map(p => ({
+      periodNumber: p.periodNumber,
+      status: p.status
+    }));
+
+    res.status(200).json({
+      date: today,
+      studentName: record.studentName,
+      regNo: record.regNo,
+      periods: summary
+    });
+  } catch (err) {
+    console.error('Fetch attendance error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
