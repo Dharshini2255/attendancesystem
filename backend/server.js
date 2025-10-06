@@ -271,6 +271,10 @@ app.get('/attendance/today/:studentId', async (req, res) => {
 });
 
 // ------------------- User Info Route -------------------
+app.get('/test', (req, res) => {
+  res.send('✅ Test route is working');
+});
+
 app.get('/userinfo', async (req, res) => {
   try {
     const { username } = req.query;
