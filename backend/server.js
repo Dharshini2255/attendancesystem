@@ -17,26 +17,23 @@ mongoose.connect(process.env.MONGO_URI, {
 }).then(() => console.log("✅ MongoDB Connected"))
   .catch(err => console.error("❌ MongoDB Connection Error:", err));
 
-// ------------------- Schemas -------------------
-const userSchema = new mongoose.Schema({
+// ------------------- Models -------------------
+const studentSchema = new mongoose.Schema({
   name: String,
-  regNo: String,
   class: String,
-  year: String,
+  year: Number,
+  regNo: { type: String, unique: true },
   phone: String,
   username: { type: String, unique: true },
   email: { type: String, unique: true },
   password: String,
   uuid: { type: String, unique: true },
-  location: {
-    latitude: Number,
-    longitude: Number
-  }
+  location: { latitude: Number, longitude: Number }
 });
-const User = mongoose.model("User", userSchema);
+const Student = mongoose.model('Student', studentSchema);
 
 const attendanceSchema = new mongoose.Schema({
-  studentId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  studentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Student' },
   studentName: String,
   regNo: String,
   date: String,
@@ -50,7 +47,7 @@ const attendanceSchema = new mongoose.Schema({
 const Attendance = mongoose.model("Attendance", attendanceSchema);
 
 const pingSchema = new mongoose.Schema({
-  studentId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  studentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Student' },
   studentName: String,
   regNo: String,
   periodNumber: Number,
@@ -66,19 +63,19 @@ const Ping = mongoose.model("Ping", pingSchema);
 // ------------------- Validation Routes -------------------
 app.post('/check-student', async (req, res) => {
   const { name, regNo } = req.body;
-  const student = await User.findOne({ name, regNo });
+  const student = await Student.findOne({ name, regNo });
   res.json({ exists: !!student });
 });
 
 app.post('/check-username', async (req, res) => {
   const { username } = req.body;
-  const user = await User.findOne({ username });
+  const user = await Student.findOne({ username });
   res.json({ exists: !!user });
 });
 
 app.post('/check-email', async (req, res) => {
   const { email } = req.body;
-  const user = await User.findOne({ email });
+  const user = await Student.findOne({ email });
   res.json({ exists: !!user });
 });
 
@@ -91,21 +88,21 @@ app.post('/signup', async (req, res) => {
       return res.status(400).json({ error: "All fields are required" });
     }
 
-    const existsNameReg = await User.findOne({ name, regNo });
+    const existsNameReg = await Student.findOne({ name, regNo });
     if (existsNameReg) return res.status(400).json({ error: "Student already exists" });
 
-    const existsUsername = await User.findOne({ username });
+    const existsUsername = await Student.findOne({ username });
     if (existsUsername) return res.status(400).json({ error: "Username already taken" });
 
-    const existsEmail = await User.findOne({ email });
+    const existsEmail = await Student.findOne({ email });
     if (existsEmail) return res.status(400).json({ error: "Email already registered" });
 
-    const existsUuid = await User.findOne({ uuid });
+    const existsUuid = await Student.findOne({ uuid });
     if (existsUuid) return res.status(400).json({ error: "UUID already registered" });
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const newUser = new User({
+    const newUser = new Student({
       name,
       regNo,
       class: className,
@@ -131,7 +128,7 @@ app.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body;
 
-    const user = await User.findOne({ username });
+    const user = await Student.findOne({ username });
     if (!user) return res.status(404).json({ error: "User not found" });
 
     const passwordMatch = await bcrypt.compare(password, user.password);
@@ -163,7 +160,7 @@ app.post('/attendance/mark', async (req, res) => {
   try {
     const { studentId, periodNumber, timestampType, location } = req.body;
 
-    const student = await User.findById(studentId);
+    const student = await Student.findById(studentId);
     if (!student) return res.status(404).json({ error: "Student not found" });
 
     const collegeLocation = { latitude: 12.8005328, longitude: 80.0388091 };
@@ -279,7 +276,7 @@ app.get('/userinfo', async (req, res) => {
     const { username } = req.query;
     if (!username) return res.status(400).json({ error: 'Username is required' });
 
-    const user = await User.findOne({ username });
+    const user = await Student.findOne({ username });
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const { password, ...safeUser } = user.toObject(); // exclude password

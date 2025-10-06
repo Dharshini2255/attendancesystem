@@ -1,6 +1,11 @@
-app.post('/signup', async (req, res) => {
+const express = require('express');
+const router = express.Router();
+const bcrypt = require('bcryptjs');
+const User = require('../models/Student');
+
+router.post('/', async (req, res) => {
   try {
-   const { name, class: className, year, regNo, phone, username, email, password, uuid, location } = req.body;
+    const { name, class: className, year, regNo, phone, username, email, password, uuid, location } = req.body;
 
     if (!name || !className || !year || !regNo || !username || !password || !email || !uuid || !location) {
       return res.status(400).json({ error: "All required fields must be provided" });
@@ -35,3 +40,5 @@ app.post('/signup', async (req, res) => {
     res.status(500).json({ error: 'Server error while creating account' });
   }
 });
+
+module.exports = router;
