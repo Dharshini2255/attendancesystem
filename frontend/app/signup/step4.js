@@ -21,7 +21,7 @@ export default function Step4() {
   const [uuidValue, setUuidValue] = useState('');
   const [loading, setLoading] = useState(true);
 
-  const BACKEND_URL = 'http://192.168.0.132:5000/signup'; // replace with your server IP
+  const BACKEND_URL = 'https://attendance-backend.onrender.com/signup'; // replace with your server IP
 
   useEffect(() => {
     const fetchData = async () => {

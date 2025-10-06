@@ -26,7 +26,8 @@ export default function Step3() {
   const [emailExists, setEmailExists] = useState(false);
   const debounceTimeout = useRef(null);
 
-  const BACKEND_CHECK_EMAIL = 'http://192.168.0.132:5000/check-email'; // replace with your server IP
+  const BACKEND_CHECK_EMAIL = 'https://attendance-backend.onrender.com/check-email';
+ // replace with your server IP
 
   useEffect(() => {
     if (currentStep < 3) router.replace(`/signup/step${currentStep}`);

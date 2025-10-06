@@ -260,6 +260,7 @@ app.get('/attendance/today/:studentId', async (req, res) => {
       periodNumber: p.periodNumber,
       status: p.status
     }));
+
     res.status(200).json({
       date: today,
       studentName: record.studentName,
@@ -268,6 +269,23 @@ app.get('/attendance/today/:studentId', async (req, res) => {
     });
   } catch (err) {
     console.error('Fetch attendance error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ------------------- User Info Route -------------------
+app.get('/userinfo', async (req, res) => {
+  try {
+    const { username } = req.query;
+    if (!username) return res.status(400).json({ error: 'Username is required' });
+
+    const user = await User.findOne({ username });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const { password, ...safeUser } = user.toObject(); // exclude password
+    res.json(safeUser);
+  } catch (err) {
+    console.error('User info fetch error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });

@@ -36,32 +36,33 @@ export default function Step2() {
   }, [currentStep]);
 
   const checkUsernameExists = async (username) => {
-    if (!username) return false;
-    setCheckingUsername(true);
+  if (!username) return false;
+  setCheckingUsername(true);
 
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-      const res = await fetch("http://192.168.0.132:5000/check-username", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username }),
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
+    const response = await fetch('https://attendance-backend.onrender.com/check-username', {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username }),
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
 
-      if (!res.ok) throw new Error('Server error');
+    if (!response.ok) throw new Error('Server error');
 
-      const data = await res.json();
-      return data.exists;
-    } catch (err) {
-      console.error('Username check failed:', err.message);
-      return false;
-    } finally {
-      setCheckingUsername(false);
-    }
-  };
+    const data = await response.json();
+    return data.exists;
+  } catch (err) {
+    console.error('Username check failed:', err.message);
+    return false;
+  } finally {
+    setCheckingUsername(false);
+  }
+};
+
 
   useEffect(() => {
     if (debounceTimeout.current) clearTimeout(debounceTimeout.current);

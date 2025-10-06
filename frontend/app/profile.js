@@ -1,12 +1,11 @@
-// MyMobileApp/app/profile.js
 import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    ScrollView,
-    StyleSheet,
-    Text,
-    View
+  ActivityIndicator,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View
 } from 'react-native';
 
 export default function Profile() {
@@ -14,7 +13,7 @@ export default function Profile() {
   const [userInfo, setUserInfo] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const BACKEND_URL = 'http://192.168.0.132:5000/userinfo'; // replace with your actual endpoint
+  const BACKEND_URL = 'https://attendance-backend.onrender.com/userinfo';
 
   useEffect(() => {
     const fetchUserInfo = async () => {

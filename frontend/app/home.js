@@ -41,7 +41,7 @@ export default function HomeScreen() {
       setUser(parsedUser);
 
       // Fetch today's attendance
-      const response = await fetch(`http://192.168.0.132:5000/attendance/today/${parsedUser._id}`);
+     const response = await fetch(`https://attendance-backend.onrender.com/attendance/today/${parsedUser._id}`);
       const data = await response.json();
       setAttendance(data.periods || []);
       setAttendanceDate(data.date || '');
@@ -93,7 +93,7 @@ export default function HomeScreen() {
     }
 
     try {
-      const response = await fetch('http://192.168.0.132:5000/attendance/mark', {
+      const response = await fetch('https://attendance-backend.onrender.com/attendance/mark', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

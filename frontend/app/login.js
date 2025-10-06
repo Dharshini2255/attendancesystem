@@ -16,7 +16,8 @@ export default function LoginScreen() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
 
-  const BACKEND_URL = 'http://192.168.0.132:5000/login'; // ✅ Replace with your local IP
+ const BACKEND_URL = 'https://attendance-backend.onrender.com/login';
+ // ✅ Replace with your local IP
 
   const handleLogin = async () => {
     if (!username || !password) {
