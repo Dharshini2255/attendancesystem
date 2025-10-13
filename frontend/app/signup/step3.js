@@ -26,7 +26,7 @@ export default function Step3() {
   const [emailExists, setEmailExists] = useState(false);
   const debounceTimeout = useRef(null);
 
-  const BACKEND_CHECK_EMAIL = 'https://attendance-backend.onrender.com/check-email';
+  const BACKEND_CHECK_EMAIL = 'https://railway-up-production-fda2.up.railway.app/check-email';
  // replace with your server IP
 
   useEffect(() => {

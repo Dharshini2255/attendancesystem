@@ -16,7 +16,7 @@ export default function LoginScreen() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
 
- const BACKEND_URL = 'https://attendance-backend.onrender.com/login';
+ const BACKEND_URL = 'https://railway-up-production-fda2.up.railway.app/login';
  // ✅ Replace with your local IP
 
   const handleLogin = async () => {

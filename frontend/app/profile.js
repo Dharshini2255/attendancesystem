@@ -13,7 +13,7 @@ export default function Profile() {
   const [userInfo, setUserInfo] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const BACKEND_URL = 'https://attendance-backend.onrender.com/userinfo';
+  const BACKEND_URL = 'https://railway-up-production-fda2.up.railway.app/userinfo';
 
   useEffect(() => {
     const fetchUserInfo = async () => {
