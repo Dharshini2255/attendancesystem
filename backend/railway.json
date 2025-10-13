@@ -5,7 +5,7 @@
   },
   "start": "node server.js",
   "web": {
-    "port": 5000,
+    "port": 8080,
     "healthcheckPath": "/test"
   }
 }
