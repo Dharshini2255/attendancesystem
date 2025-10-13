@@ -3,7 +3,7 @@
   "build": {
     "builder": "NIXPACKS"
   },
-  "start": "node server.js",
+  "start": "npm run start",
   "web": {
     "port": 8080,
     "healthcheckPath": "/test"
