@@ -32,6 +32,7 @@ router.post('/', async (req, res) => {
     });
 
     await newUser.save();
+    console.log('✅ User saved:', newUser);
 
     res.json({ message: "✅ Account created successfully" });
 

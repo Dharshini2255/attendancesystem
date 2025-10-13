@@ -1,0 +1,11 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "NIXPACKS"
+  },
+  "start": "node server.js",
+  "web": {
+    "port": 5000,
+    "healthcheckPath": "/test"
+  }
+}
