@@ -21,7 +21,8 @@ export default function Step4() {
   const [uuidValue, setUuidValue] = useState('');
   const [loading, setLoading] = useState(true);
 
-  const BACKEND_URL = 'https://railway-up-production-fda2.up.railway.app/signup'; // replace with your server IP
+  const BACKEND_URL = 'https://attendancesystem-backend-mias.onrender.com/signup';
+
 
   useEffect(() => {
     const fetchData = async () => {

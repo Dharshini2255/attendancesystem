@@ -93,7 +93,7 @@ export default function HomeScreen() {
     }
 
     try {
-      const response = await fetch('https://railway-up-production-fda2.up.railway.app/attendance/mark', {
+      const response = await fetch('https://attendancesystem-backend-mias.onrender.com/attendance/mark', {
   method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

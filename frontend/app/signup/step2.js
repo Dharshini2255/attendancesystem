@@ -43,12 +43,13 @@ export default function Step2() {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-    const response = await fetch('https://railway-up-production-fda2.up.railway.app/check-username', {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username }),
-      signal: controller.signal
-    });
+    const response = await fetch('https://attendancesystem-backend-mias.onrender.com/check-username', {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ username }),
+  signal: controller.signal
+});
+
     clearTimeout(timeoutId);
 
     if (!response.ok) throw new Error('Server error');

@@ -5,7 +5,8 @@ import { Alert, Button, StyleSheet, Text, View } from 'react-native';
 export default function AttendancePing({ studentId }) {
   const [location, setLocation] = useState(null);
   const [status, setStatus] = useState('');
-  const BACKEND_URL = 'https://railway-up-production-fda2.up.railway.app/attendance/mark';
+ const BACKEND_URL = 'https://attendancesystem-backend-mias.onrender.com/attendance/mark';
+
 
   useEffect(() => {
     const fetchLocation = async () => {

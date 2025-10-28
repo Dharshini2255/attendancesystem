@@ -11,7 +11,7 @@ export default function AdminDashboard() {
   const backgroundColor = isDark ? '#222' : '#fff';
   const boxColor = isDark ? '#333' : '#f2f2f2';
 
-  const BACKEND_URL = 'https://railway-up-production-fda2.up.railway.app'; // GET route
+  const BACKEND_URL = 'https://attendancesystem-backend-mias.onrender.com'; // GET route
 
   const fetchUsers = async () => {
     try {
