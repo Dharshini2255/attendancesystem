@@ -92,7 +92,7 @@ export default function Step4() {
         await resetSignup();
 
         Alert.alert('Signup Complete', 'Please log in to continue.');
-        router.replace('/login');
+        router.replace('/');
       }
 
       else {

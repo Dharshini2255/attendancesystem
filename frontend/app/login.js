@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
@@ -16,6 +16,21 @@ export default function LoginScreen() {
   const router = useRouter();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+
+  // If a user is already stored (web or native), redirect to /home
+  useEffect(() => {
+    (async () => {
+      try {
+        let storedUser = await SecureStore.getItemAsync('user');
+        if (!storedUser) {
+          try { storedUser = await AsyncStorage.getItem('user'); } catch {}
+        }
+        if (storedUser) {
+          router.replace('/home');
+        }
+      } catch {}
+    })();
+  }, []);
 
  const BACKEND_URL = 'https://attendancesystem-backend-mias.onrender.com/login';
 
@@ -44,6 +59,15 @@ export default function LoginScreen() {
         // ✅ Show welcome message and navigate
         Alert.alert('✅ Login Successful', `Welcome ${data.user.name}`);
         router.replace('/home');
+        if (Platform.OS === 'web') {
+          setTimeout(() => {
+            try {
+              if (typeof window !== 'undefined' && !window.location.pathname.endsWith('/home')) {
+                window.location.assign('/home');
+              }
+            } catch {}
+          }, 50);
+        }
 
       } else {
         Alert.alert('❌ Login Failed', data.error || 'Invalid credentials');

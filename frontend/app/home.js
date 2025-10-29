@@ -227,9 +227,13 @@ useEffect(() => {
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.drawerItem}
-                onPress={() => {
+                onPress={async () => {
                   setDrawerVisible(false);
-                  SecureStore.deleteItemAsync('user');
+                  try { await SecureStore.deleteItemAsync('user'); } catch {}
+                  try {
+                    const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+                    await AsyncStorage.removeItem('user');
+                  } catch {}
                   router.replace('/login');
                 }}
               >
