@@ -26,6 +26,21 @@ export default function HomeScreen() {
   const [attendance, setAttendance] = useState([]);
   const [attendanceDate, setAttendanceDate] = useState('');
 
+  const refreshAttendance = async (id) => {
+    try {
+      const response = await fetch(`https://attendancesystem-backend-mias.onrender.com/attendance/today/${id}`);
+      const data = await response.json();
+      if (response.ok) {
+        setAttendance(data.periods || []);
+        setAttendanceDate(data.date || '');
+      } else {
+        console.warn('Attendance fetch failed:', data?.error || response.status);
+      }
+    } catch (e) {
+      console.warn('Attendance request error:', e);
+    }
+  };
+
   const referenceLocation = {
     latitude: 12.8005328,
     longitude: 80.0388091
@@ -56,19 +71,8 @@ useEffect(() => {
       }
       const parsedUser = JSON.parse(storedUser);
       setUser(parsedUser);
-      // Fetch attendance data; failures here should not kick user back to login
-      try {
-        const response = await fetch(`https://attendancesystem-backend-mias.onrender.com/attendance/today/${parsedUser._id}`);
-        const data = await response.json();
-        if (response.ok) {
-          setAttendance(data.periods || []);
-          setAttendanceDate(data.date || '');
-        } else {
-          console.warn('Attendance fetch failed:', data?.error || response.status);
-        }
-      } catch (fetchErr) {
-        console.warn('Attendance request error:', fetchErr);
-      }
+      // Initial load of today's attendance
+      await refreshAttendance(parsedUser._id);
       // Start background tracking safely
       try {
         await startBackgroundTracking();
@@ -136,6 +140,10 @@ useEffect(() => {
 
       if (response.ok) {
         setStatus(`✅ Ping recorded: ${timestampType}`);
+        // Re-fetch attendance so UI reflects "present" once 4 pings are recorded
+        if (user?._id) {
+          await refreshAttendance(user._id);
+        }
       } else {
         Alert.alert('Ping Failed', data.error || 'Could not mark attendance');
       }
