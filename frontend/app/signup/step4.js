@@ -93,7 +93,7 @@ export default function Step4() {
         resetSignup();
 
         Alert.alert('Signup Complete', 'Please log in to continue.');
-        router.replace('/login'); // ✅ Trigger navigation outside the alert
+        router.push('/login'); // ✅ Trigger navigation outside the alert
       }
 
       else {

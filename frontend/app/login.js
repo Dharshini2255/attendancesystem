@@ -41,7 +41,7 @@ export default function LoginScreen() {
 
         // ✅ Show welcome message and navigate
         Alert.alert('✅ Login Successful', `Welcome ${data.user.name}`);
-      router.replace('/home'); // or router.replace('/(main)/home') if it's nested
+        router.replace('/home'); // or router.replace('/(main)/home') if it's nested
 
       } else {
         Alert.alert('❌ Login Failed', data.error || 'Invalid credentials');
@@ -103,5 +103,3 @@ const styles = StyleSheet.create({
     borderColor: '#555'
   }
 });
-
-export const useLogin = () => useContext(LoginScreen);
