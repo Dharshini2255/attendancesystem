@@ -37,7 +37,14 @@ useEffect(() => {
   const loadUser = async () => {
     // Read user from secure storage; only redirect if missing or unreadable
     try {
-      const storedUser = await SecureStore.getItemAsync('user');
+      let storedUser = await SecureStore.getItemAsync('user');
+      if (!storedUser) {
+        try {
+          // Fallback for web where SecureStore may be unavailable
+          const alt = await (await import('@react-native-async-storage/async-storage')).default.getItem('user');
+          storedUser = alt;
+        } catch {}
+      }
       if (!storedUser) {
         router.replace('/login');
         return;

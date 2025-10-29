@@ -12,7 +12,6 @@ import {
 } from 'react-native';
 import uuid from 'react-native-uuid';
 import { useSignup } from '../../context/SignupContext';
-import { useLogin } from '../../app/login';
 
 export default function Step4() {
   const router = useRouter();
@@ -90,10 +89,10 @@ export default function Step4() {
 
       if (response.ok) {
         await markSignupCompleted();
-        resetSignup();
+        await resetSignup();
 
         Alert.alert('Signup Complete', 'Please log in to continue.');
-        router.navigate('/login'); // ✅ Trigger navigation outside the alert
+        router.replace('/login');
       }
 
       else {

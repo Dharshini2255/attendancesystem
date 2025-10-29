@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import * as SecureStore from 'expo-secure-store';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Alert,
   Button,
@@ -36,12 +37,13 @@ export default function LoginScreen() {
       const data = await response.json();
 
       if (response.ok) {
-        // ✅ Store user info securely
-        await SecureStore.setItemAsync('user', JSON.stringify(data.user));
+        // ✅ Store user info securely (SecureStore) and fallback (AsyncStorage)
+        try { await SecureStore.setItemAsync('user', JSON.stringify(data.user)); } catch {}
+        try { await AsyncStorage.setItem('user', JSON.stringify(data.user)); } catch {}
 
         // ✅ Show welcome message and navigate
         Alert.alert('✅ Login Successful', `Welcome ${data.user.name}`);
-        router.replace('/home'); // or router.replace('/(main)/home') if it's nested
+        router.replace('/home');
 
       } else {
         Alert.alert('❌ Login Failed', data.error || 'Invalid credentials');
