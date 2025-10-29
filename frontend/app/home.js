@@ -15,7 +15,8 @@ import {
   View,
   Button,
   ImageBackground,
-  ScrollView
+  ScrollView,
+  TextInput
 } from 'react-native';
 
 export default function HomeScreen() {
@@ -25,6 +26,9 @@ export default function HomeScreen() {
   const [status, setStatus] = useState('');
   const [attendance, setAttendance] = useState([]);
   const [attendanceDate, setAttendanceDate] = useState('');
+  const [adminVisible, setAdminVisible] = useState(false);
+  const [adminName, setAdminName] = useState('');
+  const [adminPass, setAdminPass] = useState('');
 
   const refreshAttendance = async (id) => {
     try {
@@ -169,11 +173,11 @@ useEffect(() => {
         <ScrollView contentContainerStyle={styles.scroll}>
           {/* Header */}
           <View style={styles.header}>
-            <TouchableOpacity onPress={() => setDrawerVisible(true)}>
-              <Ionicons name="menu" size={28} color="#fff" />
-            </TouchableOpacity>
-            <Text style={styles.headerTitle}>Welcome, {user.name}</Text>
-          </View>
+              <TouchableOpacity onPress={() => setDrawerVisible(true)}>
+                <Ionicons name="menu" size={28} color="#fff" />
+              </TouchableOpacity>
+              <Text style={styles.headerTitle}>Welcome, {user.name}</Text>
+            </View>
 
           {/* User Info */}
           <View style={styles.infoBox}>
@@ -233,10 +237,19 @@ useEffect(() => {
                 style={styles.drawerItem}
                 onPress={() => {
                   setDrawerVisible(false);
-                  router.push('/profile');
+                  router.push({ pathname: '/profile', params: { username: user?.username } });
                 }}
               >
                 <Text style={styles.drawerText}>My Profile</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.drawerItem}
+                onPress={() => {
+                  setDrawerVisible(false);
+                  setTimeout(() => setAdminVisible(true), 150);
+                }}
+              >
+                <Text style={styles.drawerText}>Admin Dashboard</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.drawerItem}
@@ -246,12 +259,63 @@ useEffect(() => {
                   try {
                     const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
                     await AsyncStorage.removeItem('user');
+                    await AsyncStorage.removeItem('adminAuth');
                   } catch {}
                   router.replace('/login');
                 }}
               >
                 <Text style={styles.drawerText}>Sign Out</Text>
               </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Modal>
+
+        {/* Admin Login Modal */}
+        <Modal
+          animationType="fade"
+          transparent={true}
+          visible={adminVisible}
+          onRequestClose={() => setAdminVisible(false)}
+        >
+          <Pressable style={styles.overlay} onPress={() => setAdminVisible(false)}>
+            <View style={styles.adminBox}>
+              <Text style={[styles.drawerTitle, { marginBottom: 10 }]}>Admin Login</Text>
+              <Text style={styles.label}>Name</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: '#222', color: '#fff', borderColor: '#555' }]}
+                placeholder="Enter full name"
+                placeholderTextColor="#888"
+                value={adminName}
+                onChangeText={setAdminName}
+              />
+              <Text style={styles.label}>Password</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: '#222', color: '#fff', borderColor: '#555' }]}
+                placeholder="Enter password"
+                placeholderTextColor="#888"
+                secureTextEntry
+                value={adminPass}
+                onChangeText={setAdminPass}
+              />
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 }}>
+                <Button title="Cancel" onPress={() => setAdminVisible(false)} />
+                <Button
+                  title="Login"
+                  onPress={async () => {
+                    const ok = adminName.trim() === 'Dharshini Priya S' && adminPass === 'Admin@sdp2255';
+                    if (!ok) {
+                      Alert.alert('Access denied', 'Invalid admin credentials');
+                      return;
+                    }
+                    try {
+                      const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+                      await AsyncStorage.setItem('adminAuth', 'true');
+                    } catch {}
+                    setAdminVisible(false);
+                    router.push('/AdminDashboard');
+                  }}
+                />
+              </View>
             </View>
           </Pressable>
         </Modal>
@@ -282,5 +346,13 @@ const styles = StyleSheet.create({
   },
   drawerTitle: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginBottom: 20 },
   drawerItem: { marginBottom: 15 },
-  drawerText: { color: '#fff', fontSize: 16 }
+  drawerText: { color: '#fff', fontSize: 16 },
+  adminBox: {
+    backgroundColor: '#333',
+    padding: 16,
+    width: '85%',
+    alignSelf: 'center',
+    borderRadius: 8
+  },
+  input: { borderWidth: 1, padding: 10, borderRadius: 5, marginBottom: 10 }
 });
