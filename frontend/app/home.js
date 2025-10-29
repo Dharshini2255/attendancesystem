@@ -37,12 +37,17 @@ useEffect(() => {
   const loadUser = async () => {
     // Read user from secure storage; only redirect if missing or unreadable
     try {
-      let storedUser = await SecureStore.getItemAsync('user');
+      let storedUser = null;
+      try {
+        // Skip SecureStore on web entirely
+        if (typeof navigator !== 'undefined' && navigator.product === 'ReactNative') {
+          storedUser = await SecureStore.getItemAsync('user');
+        }
+      } catch {}
       if (!storedUser) {
         try {
-          // Fallback for web where SecureStore may be unavailable
-          const alt = await (await import('@react-native-async-storage/async-storage')).default.getItem('user');
-          storedUser = alt;
+          const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+          storedUser = await AsyncStorage.getItem('user');
         } catch {}
       }
       if (!storedUser) {

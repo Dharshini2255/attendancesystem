@@ -12,6 +12,23 @@ import {
   TextInput
 } from 'react-native';
 
+const isWeb = Platform.OS === 'web';
+const safeSecureGet = async (key) => {
+  try {
+    if (!isWeb && typeof SecureStore.getItemAsync === 'function') {
+      return await SecureStore.getItemAsync(key);
+    }
+  } catch {}
+  return null;
+};
+const safeSecureSet = async (key, value) => {
+  try {
+    if (!isWeb && typeof SecureStore.setItemAsync === 'function') {
+      await SecureStore.setItemAsync(key, value);
+    }
+  } catch {}
+};
+
 export default function LoginScreen() {
   const router = useRouter();
   const [username, setUsername] = useState('');
@@ -20,15 +37,13 @@ export default function LoginScreen() {
   // If a user is already stored (web or native), redirect to /home
   useEffect(() => {
     (async () => {
-      try {
-        let storedUser = await SecureStore.getItemAsync('user');
-        if (!storedUser) {
-          try { storedUser = await AsyncStorage.getItem('user'); } catch {}
-        }
-        if (storedUser) {
-          router.replace('/home');
-        }
-      } catch {}
+      let storedUser = await safeSecureGet('user');
+      if (!storedUser) {
+        try { storedUser = await AsyncStorage.getItem('user'); } catch {}
+      }
+      if (storedUser) {
+        router.replace('/home');
+      }
     })();
   }, []);
 
@@ -53,7 +68,7 @@ export default function LoginScreen() {
 
       if (response.ok) {
         // ✅ Store user info securely (SecureStore) and fallback (AsyncStorage)
-        try { await SecureStore.setItemAsync('user', JSON.stringify(data.user)); } catch {}
+        await safeSecureSet('user', JSON.stringify(data.user));
         try { await AsyncStorage.setItem('user', JSON.stringify(data.user)); } catch {}
 
         // ✅ Show welcome message and navigate
