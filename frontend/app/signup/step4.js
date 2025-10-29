@@ -107,10 +107,32 @@ export default function Step4() {
 
       else {
         Alert.alert('Error', data.error || 'Signup failed.');
+        try { await resetSignup(); } catch {}
+        router.replace('/login');
+        if (Platform.OS === 'web') {
+          setTimeout(() => {
+            try {
+              if (typeof window !== 'undefined' && !window.location.pathname.endsWith('/login')) {
+                window.location.assign('/login');
+              }
+            } catch {}
+          }, 50);
+        }
       }
     } catch (err) {
       console.error(err);
       Alert.alert('Network Error', 'Could not connect to server.');
+      try { await resetSignup(); } catch {}
+      router.replace('/login');
+      if (Platform.OS === 'web') {
+        setTimeout(() => {
+          try {
+            if (typeof window !== 'undefined' && !window.location.pathname.endsWith('/login')) {
+              window.location.assign('/login');
+            }
+          } catch {}
+        }, 50);
+      }
     }
   };
 
