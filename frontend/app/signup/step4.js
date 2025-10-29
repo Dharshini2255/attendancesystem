@@ -8,7 +8,8 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  View
+  View,
+  Platform
 } from 'react-native';
 import uuid from 'react-native-uuid';
 import { useSignup } from '../../context/SignupContext';
@@ -92,7 +93,16 @@ export default function Step4() {
         await resetSignup();
 
         Alert.alert('Signup Complete', 'Please log in to continue.');
-        router.replace('/');
+        router.replace('/login');
+        if (Platform.OS === 'web') {
+          setTimeout(() => {
+            try {
+              if (typeof window !== 'undefined' && !window.location.pathname.endsWith('/login')) {
+                window.location.assign('/login');
+              }
+            } catch {}
+          }, 50);
+        }
       }
 
       else {
