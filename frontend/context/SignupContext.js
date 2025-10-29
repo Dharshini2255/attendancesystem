@@ -45,7 +45,7 @@ export const SignupProvider = ({ children }) => {
   };
 
   const resetSignup = async () => {
-    setSignupData({});``
+    setSignupData({});
     setCurrentStep(1);
     setSignupCompleted(false);
     setResumeSignup(false);

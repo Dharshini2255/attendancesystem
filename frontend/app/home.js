@@ -35,6 +35,7 @@ export default function HomeScreen() {
 
 useEffect(() => {
   const loadUser = async () => {
+    // Read user from secure storage; only redirect if missing or unreadable
     try {
       const storedUser = await SecureStore.getItemAsync('user');
       if (!storedUser) {
@@ -43,13 +44,27 @@ useEffect(() => {
       }
       const parsedUser = JSON.parse(storedUser);
       setUser(parsedUser);
-      const response = await fetch(`https://attendancesystem-backend-mias.onrender.com/attendance/today/${parsedUser._id}`);
-      const data = await response.json();
-      setAttendance(data.periods || []);
-      setAttendanceDate(data.date || '');
-      await startBackgroundTracking();
+      // Fetch attendance data; failures here should not kick user back to login
+      try {
+        const response = await fetch(`https://attendancesystem-backend-mias.onrender.com/attendance/today/${parsedUser._id}`);
+        const data = await response.json();
+        if (response.ok) {
+          setAttendance(data.periods || []);
+          setAttendanceDate(data.date || '');
+        } else {
+          console.warn('Attendance fetch failed:', data?.error || response.status);
+        }
+      } catch (fetchErr) {
+        console.warn('Attendance request error:', fetchErr);
+      }
+      // Start background tracking safely
+      try {
+        await startBackgroundTracking();
+      } catch (bgErr) {
+        console.warn('Background tracking failed to start:', bgErr);
+      }
     } catch (err) {
-      console.error('Error loading user or attendance:', err);
+      console.error('Error reading user from storage:', err);
       router.replace('/login');
     }
   };

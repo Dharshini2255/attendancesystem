@@ -4,7 +4,7 @@ import { StyleSheet, Text, View } from 'react-native';
 export default function NotFound() {
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Oops! This page doesn't exist.</Text>
+      <Text style={styles.title}>Oops! This page doesn’t exist.</Text>
       <Link href="/home" style={styles.link}>Go back Home</Link>
     </View>
   );
