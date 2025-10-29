@@ -33,22 +33,23 @@ export default function HomeScreen() {
 
   const timestampTypes = ['start', 'afterStart15', 'beforeEnd10', 'end'];
 
-  useEffect(() => {
+useEffect(() => {
   const loadUser = async () => {
-    const storedUser = await SecureStore.getItemAsync('user');
-    if (storedUser) {
+    try {
+      const storedUser = await SecureStore.getItemAsync('user');
+      if (!storedUser) {
+        router.replace('/login');
+        return;
+      }
       const parsedUser = JSON.parse(storedUser);
       setUser(parsedUser);
-
-      // Fetch today's attendance
-    const response = await fetch(`https://railway-up-production-fda2.up.railway.app/attendance/today/${parsedUser._id}`);
+      const response = await fetch(`https://attendancesystem-backend-mias.onrender.com/attendance/today/${parsedUser._id}`);
       const data = await response.json();
       setAttendance(data.periods || []);
       setAttendanceDate(data.date || '');
-
-      // ✅ Start background tracking
       await startBackgroundTracking();
-    } else {
+    } catch (err) {
+      console.error('Error loading user or attendance:', err);
       router.replace('/login');
     }
   };

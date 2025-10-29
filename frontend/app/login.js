@@ -40,9 +40,9 @@ export default function LoginScreen() {
         await SecureStore.setItemAsync('user', JSON.stringify(data.user));
 
         // ✅ Show welcome message and navigate
-        Alert.alert('✅ Login Successful', `Welcome ${data.user.name}`, [
-          { text: 'Continue', onPress: () => router.replace('/home') }
-        ]);
+        Alert.alert('✅ Login Successful', `Welcome ${data.user.name}`);
+      router.replace('/home'); // or router.replace('/(main)/home') if it's nested
+
       } else {
         Alert.alert('❌ Login Failed', data.error || 'Invalid credentials');
       }
