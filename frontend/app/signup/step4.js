@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import uuid from 'react-native-uuid';
 import { useSignup } from '../../context/SignupContext';
+import { useLogin } from '../../app/login';
 
 export default function Step4() {
   const router = useRouter();

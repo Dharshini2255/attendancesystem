@@ -103,3 +103,5 @@ const styles = StyleSheet.create({
     borderColor: '#555'
   }
 });
+
+export const useLogin = () => useContext(LoginScreen);
