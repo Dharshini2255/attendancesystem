@@ -91,10 +91,12 @@ export default function Step4() {
       if (response.ok) {
         await markSignupCompleted();
         resetSignup();
-        Alert.alert('Signup Complete', 'Please log in to continue.', [
-          { text: 'Go to Login', onPress: () => router.replace('/login') }
-        ]);
-      } else {
+
+        Alert.alert('Signup Complete', 'Please log in to continue.');
+        router.replace('/login'); // ✅ Trigger navigation outside the alert
+      }
+
+      else {
         Alert.alert('Error', data.error || 'Signup failed.');
       }
     } catch (err) {
