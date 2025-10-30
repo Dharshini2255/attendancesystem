@@ -186,8 +186,6 @@ export default function AdminDashboard() {
           </View>
         </View>
       )}
-    </View>
-
       {tab === 'users' && (
         <View style={{ width: '100%' }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
@@ -273,6 +271,9 @@ export default function AdminDashboard() {
           </View>
         </View>
       )}
+    </View>
+  );
+}
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
