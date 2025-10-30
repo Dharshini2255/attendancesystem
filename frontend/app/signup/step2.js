@@ -82,13 +82,8 @@ export default function Step2() {
       return;
     }
 
-    if (
-      username.length < 5 ||
-      !/[A-Za-z]/.test(username) ||
-      !/[0-9]/.test(username) ||
-      !/[^A-Za-z0-9]/.test(username)
-    ) {
-      Alert.alert('Error', 'Username must be at least 5 characters and include letters, numbers, and special characters.');
+    if (username.length < 4) {
+      Alert.alert('Error', 'Username must be at least 4 characters.');
       return;
     }
 
@@ -97,13 +92,8 @@ export default function Step2() {
       return;
     }
 
-    if (
-      password.length < 5 ||
-      !/[A-Za-z]/.test(password) ||
-      !/[0-9]/.test(password) ||
-      !/[^A-Za-z0-9]/.test(password)
-    ) {
-      Alert.alert('Error', 'Password must be at least 5 characters and include letters, numbers, and special characters.');
+    if (password.length < 4) {
+      Alert.alert('Error', 'Password must be at least 4 characters.');
       return;
     }
 
@@ -112,9 +102,18 @@ export default function Step2() {
       return;
     }
 
-    updateSignupData({ username, password });
-    saveStep(3);
-    router.push('/signup/step3');
+    await updateSignupData({ username, password });
+    await saveStep(3);
+    try { router.push('/signup/step3'); } catch {}
+    if (Platform.OS === 'web') {
+      setTimeout(() => {
+        try {
+          if (typeof window !== 'undefined' && !window.location.pathname.endsWith('/signup/step3')) {
+            window.location.assign('/signup/step3');
+          }
+        } catch {}
+      }, 50);
+    }
   };
 
   return (

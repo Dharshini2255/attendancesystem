@@ -156,7 +156,7 @@ export default function Step4() {
           </View>
         )}
       </View>
-      <Button title="Finish & Go to Login" onPress={handleFinish} />
+      <Button title="Finish" onPress={handleFinish} />
     </ScrollView>
   );
 }
