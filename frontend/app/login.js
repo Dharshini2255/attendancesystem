@@ -78,8 +78,7 @@ export default function LoginScreen() {
         setTimeout(() => {
           try {
             if (typeof window !== 'undefined' && !window.location.pathname.endsWith('/admin/AdminDashboard')) {
-              // Fallback to root with query/hash to avoid static host deep-link 404
-              window.location.assign('/?admin=1#admin');
+              window.location.assign('/admin/AdminDashboard');
             }
           } catch {}
         }, 50);
