@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import * as Location from 'expo-location';
 import { startBackgroundTracking } from '../utils/background';
+import { Platform } from 'react-native';
 
 import {
   Alert,
@@ -110,49 +111,70 @@ useEffect(() => {
   };
 
   const sendPing = async (periodNumber, timestampType) => {
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission Denied', 'Location access is required.');
-      return;
-    }
-
-    const loc = await Location.getCurrentPositionAsync({});
-    const current = {
-      latitude: loc.coords.latitude,
-      longitude: loc.coords.longitude
-    };
-
-    const distance = calculateDistance(current, referenceLocation);
-    if (distance > 100) {
-      Alert.alert('Outside Location', 'You are outside the allowed radius.');
-      return;
-    }
-
     try {
-      const response = await fetch('https://attendancesystem-backend-mias.onrender.com/attendance/mark', {
-  method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          studentId: user._id,
-          periodNumber,
-          timestampType,
-          location: current
-        })
-      });
+      setStatus(`Sending ${timestampType}…`);
+      // Request permission and get current position with web fallback
+      let granted = false;
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        granted = status === 'granted';
+      } catch {}
+      if (!granted && Platform.OS === 'web' && navigator.geolocation) {
+        // prompt browser permission via native API
+        await new Promise((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(() => resolve(), reject, { enableHighAccuracy: true, timeout: 8000 });
+        });
+        granted = true;
+      }
+      if (!granted) {
+        setStatus('');
+        Alert.alert('Permission Denied', 'Location access is required.');
+        return;
+      }
 
+      // Get position (fallback for web if expo-location throws)
+      let loc;
+      try {
+        loc = await Location.getCurrentPositionAsync({});
+      } catch (e) {
+        if (Platform.OS === 'web' && navigator.geolocation) {
+          loc = await new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(
+              (pos) => resolve({ coords: { latitude: pos.coords.latitude, longitude: pos.coords.longitude } }),
+              reject,
+              { enableHighAccuracy: true, timeout: 8000 }
+            );
+          });
+        } else {
+          throw e;
+        }
+      }
+
+      const current = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
+      const distance = calculateDistance(current, referenceLocation);
+      if (distance > 100) {
+        setStatus('');
+        Alert.alert('Outside Location', 'You are outside the allowed radius.');
+        return;
+      }
+
+      const response = await fetch('https://attendancesystem-backend-mias.onrender.com/attendance/mark', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentId: user._id, periodNumber, timestampType, location: current })
+      });
       const data = await response.json();
 
       if (response.ok) {
         setStatus(`✅ Ping recorded: ${timestampType}`);
-        // Re-fetch attendance so UI reflects "present" once 4 pings are recorded
-        if (user?._id) {
-          await refreshAttendance(user._id);
-        }
+        if (user?._id) await refreshAttendance(user._id);
       } else {
+        setStatus('');
         Alert.alert('Ping Failed', data.error || 'Could not mark attendance');
       }
     } catch (err) {
-      console.error(err);
+      console.error('Ping error:', err);
+      setStatus('');
       Alert.alert('Network Error', 'Could not connect to server');
     }
   };
