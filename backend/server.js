@@ -192,9 +192,10 @@ app.post('/attendance/mark', async (req, res) => {
     });
     await ping.save();
 
-    const today = new Date().toISOString().slice(0, 10);
-    const startOfDay = new Date(`${today}T00:00:00`);
-    const endOfDay = new Date(`${today}T23:59:59`);
+    // Use IST (Asia/Kolkata) for date boundaries to avoid UTC shifting across days
+    const todayLocal = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); // YYYY-MM-DD
+    const startOfDay = new Date(`${todayLocal}T00:00:00+05:30`);
+    const endOfDay = new Date(`${todayLocal}T23:59:59+05:30`);
 
     const allPings = await Ping.find({
       studentId,
@@ -215,14 +216,15 @@ app.post('/attendance/mark', async (req, res) => {
     });
 
     if (validPings.length === 4) {
-      let attendance = await Attendance.findOne({ studentId, date: today });
+      const todayLocal = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+      let attendance = await Attendance.findOne({ studentId, date: todayLocal });
 
       if (!attendance) {
         attendance = new Attendance({
           studentId,
           studentName: student.name,
           regNo: student.regNo,
-          date: today,
+          date: todayLocal,
           periods: []
         });
       }
@@ -246,11 +248,12 @@ app.post('/attendance/mark', async (req, res) => {
 app.get('/attendance/today/:studentId', async (req, res) => {
   try {
     const { studentId } = req.params;
-    const today = new Date().toISOString().slice(0, 10);
+    // Use IST for "today"
+    const todayLocal = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 
-    const record = await Attendance.findOne({ studentId, date: today });
+    const record = await Attendance.findOne({ studentId, date: todayLocal });
     if (!record) {
-      return res.status(200).json({ periods: [] });
+      return res.status(200).json({ periods: [], date: todayLocal });
     }
 
     const summary = record.periods.map(p => ({
@@ -259,7 +262,7 @@ app.get('/attendance/today/:studentId', async (req, res) => {
     }));
 
     res.status(200).json({
-      date: today,
+      date: todayLocal,
       studentName: record.studentName,
       regNo: record.regNo,
       periods: summary
