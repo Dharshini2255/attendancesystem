@@ -2,6 +2,7 @@ import * as TaskManager from 'expo-task-manager';
 import * as Location from 'expo-location';
 import * as SecureStore from 'expo-secure-store';
 import * as turf from '@turf/turf';
+import { Platform } from 'react-native';
 
 const LOCATION_TASK_NAME = 'background-location-task';
 
@@ -102,6 +103,11 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
 });
 
 export const startBackgroundTracking = async () => {
+  // Background location updates are not supported on web; silently no-op
+  if (Platform.OS === 'web' || typeof Location.startLocationUpdatesAsync !== 'function') {
+    return;
+  }
+
   const { status } = await Location.requestForegroundPermissionsAsync();
   if (status !== 'granted') return;
 
