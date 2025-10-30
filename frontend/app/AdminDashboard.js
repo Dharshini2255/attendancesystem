@@ -105,18 +105,107 @@ export default function AdminDashboard() {
 
       <ScrollView contentContainerStyle={styles.scroll}>
 
+      {tab === 'users' && (
+        <View style={{ width: '100%' }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+            <Text style={styles.textDark}>Users: {users.length}</Text>
+            <ActionButton title="Export CSV" color="#22c55e" onPress={exportUsers} />
+          </View>
+          <View style={styles.table}>
+            <View style={styles.tableHeader}>
+              <Text style={[styles.th, { flex: 2 }]}>Name</Text>
+              <Text style={[styles.th, { flex: 1.5 }]}>Reg No</Text>
+              <Text style={[styles.th, { flex: 1 }]}>Class</Text>
+              <Text style={[styles.th, { flex: 0.8 }]}>Year</Text>
+              <Text style={[styles.th, { flex: 2.5 }]}>Email</Text>
+              <Text style={[styles.th, { flex: 1.5 }]}>Username</Text>
+              <Text style={[styles.th, { flex: 2 }]}>UUID</Text>
+            </View>
+            {users.map((u, i) => (
+              <View key={u._id || i} style={styles.tableRow}>
+                <Text style={[styles.td, { flex: 2 }]}>{u.name}</Text>
+                <Text style={[styles.td, { flex: 1.5 }]}>{u.regNo}</Text>
+                <Text style={[styles.td, { flex: 1 }]}>{u.class}</Text>
+                <Text style={[styles.td, { flex: 0.8 }]}>{u.year}</Text>
+                <Text style={[styles.td, { flex: 2.5 }]}>{u.email}</Text>
+                <Text style={[styles.td, { flex: 1.5 }]}>{u.username}</Text>
+                <Text style={[styles.td, { flex: 2 }]}>{u.uuid}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {tab === 'attendance' && (
+        <View style={{ width: '100%' }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+            <Text style={styles.textDark}>Rows: {attRows.length}</Text>
+            <ActionButton title="Export CSV" color="#22c55e" onPress={exportAttendance} />
+          </View>
+          <View style={styles.table}>
+            <View style={styles.tableHeader}>
+              <Text style={[styles.th, { flex: 1.5 }]}>{granularity==='day' ? 'Date' : 'Bucket'}</Text>
+              <Text style={[styles.th, { flex: 2 }]}>Name</Text>
+              <Text style={[styles.th, { flex: 1.5 }]}>Reg No</Text>
+              <Text style={[styles.th, { flex: 2 }]}>Details</Text>
+            </View>
+            {attRows.map((r, i) => (
+              <View key={i} style={styles.tableRow}>
+                <Text style={[styles.td, { flex: 1.5 }]}>{r.date || r.bucket}</Text>
+                <Text style={[styles.td, { flex: 2 }]}>{r.studentName}</Text>
+                <Text style={[styles.td, { flex: 1.5 }]}>{r.regNo}</Text>
+                {r.periodNumber != null ? (
+                  <Text style={[styles.td, { flex: 2 }]}>P{r.periodNumber} - {r.status}</Text>
+                ) : (
+                  <Text style={[styles.td, { flex: 2 }]}>Present: {r.present} | Absent: {r.absent}</Text>
+                )}
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {tab === 'pings' && (
+        <View style={{ width: '100%' }}>
+          <Text style={styles.textDark}>Pings: {pings.length}</Text>
+          <View style={styles.table}>
+            <View style={styles.tableHeader}>
+              <Text style={[styles.th, { flex: 2 }]}>Time</Text>
+              <Text style={[styles.th, { flex: 1.5 }]}>Name</Text>
+              <Text style={[styles.th, { flex: 1.5 }]}>Reg No</Text>
+              <Text style={[styles.th, { flex: 1.5 }]}>Period/Type</Text>
+              <Text style={[styles.th, { flex: 1 }]}>Location</Text>
+            </View>
+            {pings.map((p, i) => (
+              <View key={i} style={styles.tableRow}>
+                <Text style={[styles.td, { flex: 2 }]}>{new Date(p.timestamp).toLocaleString()}</Text>
+                <Text style={[styles.td, { flex: 1.5 }]}>{p.studentName || ''}</Text>
+                <Text style={[styles.td, { flex: 1.5 }]}>{p.regNo || ''}</Text>
+                <Text style={[styles.td, { flex: 1.5 }]}>{p.periodNumber || ''} {p.timestampType || ''}</Text>
+                <TouchableOpacity style={{ flex: 1 }} onPress={() => window.open(`https://maps.google.com/?q=${p.location?.latitude},${p.location?.longitude}`, '_blank')}>
+                  <Text style={[styles.td, { color: '#3b82f6', textDecorationLine: 'underline' }]}>View Map</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
       </ScrollView>
       
       {/* Slide-in filter sidebar */}
       {showFilters && (
-        <View style={styles.backdrop} onTouchStart={() => setShowFilters(false)}>
-          <View style={styles.sidebar}>
+        <View style={styles.backdrop} onClick={() => setShowFilters(false)}>
+          <View style={styles.sidebar} onClick={(e) => e.stopPropagation()}>
             <View style={styles.sidebarHeader}>
               <Text style={styles.sidebarTitle}>Filters & Analytics</Text>
               <TouchableOpacity onPress={() => setShowFilters(false)} style={styles.closeBtn}>
                 <Text style={styles.closeBtnText}>✕</Text>
               </TouchableOpacity>
             </View>
+            <TouchableOpacity style={styles.foldHandle} onPress={() => setShowFilters(false)}>
+              <Text style={{ color: '#fff', fontWeight: '700' }}>{'<'}</Text>
+            </TouchableOpacity>
             
             <View style={styles.sidebarContent}>
               <View style={styles.filterSection}>
@@ -311,7 +400,19 @@ const styles = StyleSheet.create({
     width: 380,
     backgroundColor: '#fff',
     boxShadow: '-4px 0 12px rgba(0,0,0,0.15)',
-    animation: 'slideInRight 0.3s ease-out',
+  },
+  foldHandle: {
+    position: 'absolute',
+    left: -24,
+    top: '50%',
+    marginTop: -20,
+    width: 24,
+    height: 40,
+    borderTopLeftRadius: 4,
+    borderBottomLeftRadius: 4,
+    backgroundColor: '#64748b',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   sidebarHeader: {
     flexDirection: 'row',
