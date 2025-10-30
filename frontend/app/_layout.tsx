@@ -11,13 +11,15 @@ function ProtectedStack({ children }: { children: React.ReactNode }) {
   const segments = useSegments();
   const { hydrated } = useSignup();
 
+  // Avoid forcing navigation; this caused bounce from /login to /
   useEffect(() => {
     if (!hydrated) return;
-
-    const currentPath = segments.join('/');
-    if (currentPath === '') {
-      router.replace('/'); // Always start at index
-    }
+    // Only redirect if we are truly at the root path
+    try {
+      if (typeof window !== 'undefined' && window.location.pathname === '/') {
+        // Stay on index; no action needed
+      }
+    } catch {}
   }, [hydrated, segments]);
 
   return <>{children}</>;
