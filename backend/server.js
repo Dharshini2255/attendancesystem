@@ -164,6 +164,7 @@ app.post('/attendance/mark', async (req, res) => {
     if (!student) return res.status(404).json({ error: "Student not found" });
 
     const collegeLocation = { latitude: 12.8005328, longitude: 80.0388091 };
+    const MAX_RADIUS_METERS = parseInt(process.env.MAX_RADIUS_METERS || '50000', 10); // widen for testing; set to 100 in prod
 
     const toRad = (value) => (value * Math.PI) / 180;
     const R = 6371000;
@@ -178,7 +179,7 @@ app.post('/attendance/mark', async (req, res) => {
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     const distance = R * c;
 
-    if (distance > 100) {
+    if (distance > MAX_RADIUS_METERS) {
       return res.status(403).json({ error: "Outside college location. Attendance not marked." });
     }
 
@@ -212,7 +213,7 @@ app.post('/attendance/mark', async (req, res) => {
         Math.sin(dLat / 2) ** 2 +
         Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
       const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      return R * c <= 100;
+      return R * c <= MAX_RADIUS_METERS;
     });
 
     if (validPings.length === 4) {
