@@ -151,19 +151,26 @@ useEffect(() => {
       }
 
       const current = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
-      const distance = calculateDistance(current, referenceLocation);
-      if (distance > 100) {
-        setStatus('');
-        Alert.alert('Outside Location', 'You are outside the allowed radius.');
-        return;
-      }
+      // Compute distance for info only; server will enforce the radius
+      try {
+        const distance = calculateDistance(current, referenceLocation);
+        if (distance > 100) {
+          console.warn(`Outside radius by ~${Math.round(distance)}m (client)`);
+        }
+      } catch {}
 
+      // Send with timeout so failures surface quickly
+      const controller = new AbortController();
+      const t = setTimeout(() => controller.abort(), 10000);
       const response = await fetch('https://attendancesystem-backend-mias.onrender.com/attendance/mark', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ studentId: user._id, periodNumber, timestampType, location: current })
+        body: JSON.stringify({ studentId: user._id, periodNumber, timestampType, location: current }),
+        signal: controller.signal
       });
-      const data = await response.json();
+      clearTimeout(t);
+      let data = {};
+      try { data = await response.json(); } catch {}
 
       if (response.ok) {
         setStatus(`✅ Ping recorded: ${timestampType}`);
