@@ -11,6 +11,8 @@ export default function AdminDashboard() {
   const [users, setUsers] = useState([]);
   const [attRows, setAttRows] = useState([]);
   const [pings, setPings] = useState([]);
+  const [sessions, setSessions] = useState({ loggedIn: [], loggedOut: [], total: 0 });
+  const [ctrl, setCtrl] = useState({ pingEnabled: false, intervalMs: 60000 });
 
   const [from, setFrom] = useState(new Date().toLocaleDateString('en-CA'));
   const [to, setTo] = useState(new Date().toLocaleDateString('en-CA'));
@@ -73,6 +75,30 @@ export default function AdminDashboard() {
     } catch {}
   };
 
+  const loadSessions = async () => {
+    try {
+      const res = await fetch(`${api}/admin/sessions`);
+      const data = await res.json();
+      setSessions(data || { loggedIn: [], loggedOut: [], total: 0 });
+    } catch {}
+  };
+
+  const readControl = async () => {
+    try {
+      const res = await fetch(`${api}/admin/ping-control`);
+      const data = await res.json();
+      setCtrl({ pingEnabled: !!data.pingEnabled, intervalMs: data.intervalMs || 60000 });
+    } catch {}
+  };
+
+  const toggleControl = async (enabled) => {
+    try {
+      const res = await fetch(`${api}/admin/ping-control`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled, intervalMs: ctrl.intervalMs }) });
+      const data = await res.json();
+      setCtrl({ pingEnabled: !!data.pingEnabled, intervalMs: data.intervalMs || ctrl.intervalMs });
+    } catch {}
+  };
+
   const exportUsers = () => { 
     const url = new URL(`${api}/admin/export/users.csv`);
     if (query) url.searchParams.set('q', query);
@@ -104,6 +130,7 @@ export default function AdminDashboard() {
           <ActionButton title="Users" color="#3b82f6" onPress={() => { setTab('users'); }} />
           <ActionButton title="Attendance" color="#8b5cf6" onPress={() => { setTab('attendance'); loadAttendance(); }} />
           <ActionButton title="Pings/Location" color="#10b981" onPress={() => { setTab('pings'); loadPings(); }} />
+          <ActionButton title="Account State" color="#0ea5e9" onPress={() => { setTab('sessions'); loadSessions(); }} />
           <ActionButton title="Filters" color="#64748b" onPress={() => setShowFilters(true)} />
           <ActionButton title="Exit Admin" color="#ef4444" onPress={async () => { await AsyncStorage.removeItem('adminAuth'); router.replace('/home'); }} />
         </View>
@@ -158,7 +185,16 @@ export default function AdminDashboard() {
             {attRows.map((r, i) => (
               <View key={i} style={styles.tableRow}>
                 <Text style={[styles.td, { flex: 1.5 }]}>{r.date || r.bucket}</Text>
-                <Text style={[styles.td, { flex: 2 }]}>{r.studentName}</Text>
+              <TouchableOpacity style={{ flex: 2 }} onPress={async () => {
+                try {
+                  const params = new URLSearchParams({ studentId: r.studentId, date: r.date || new Date().toISOString().slice(0,10) });
+                  const res = await fetch(`${api}/admin/attendance/detail?${params}`);
+                  const detail = await res.json();
+                  alert(JSON.stringify(detail, null, 2));
+                } catch {}
+              }}>
+                <Text style={[styles.td]}>{r.studentName}</Text>
+              </TouchableOpacity>
                 <Text style={[styles.td, { flex: 1.5 }]}>{r.regNo}</Text>
                 {r.periodNumber != null ? (
                   <Text style={[styles.td, { flex: 2 }]}>P{r.periodNumber} - {r.status}</Text>
@@ -191,6 +227,60 @@ export default function AdminDashboard() {
                 <TouchableOpacity style={{ flex: 1 }} onPress={() => window.open(`https://maps.google.com/?q=${p.location?.latitude},${p.location?.longitude}`, '_blank')}>
                   <Text style={[styles.td, { color: '#3b82f6', textDecorationLine: 'underline' }]}>View Map</Text>
                 </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {tab === 'sessions' && (
+        <View style={{ width: '100%' }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+            <Text style={styles.textDark}>Logged in: {sessions.loggedIn.length} | Logged out: {sessions.loggedOut.length}</Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <ActionButton title={ctrl.pingEnabled ? 'Stop Pings' : 'Start Pings'} color={ctrl.pingEnabled ? '#ef4444' : '#22c55e'} onPress={() => toggleControl(!ctrl.pingEnabled)} />
+              <ActionButton title="Refresh" color="#64748b" onPress={() => { loadSessions(); readControl(); }} />
+            </View>
+          </View>
+
+          <View style={{ marginBottom: 12 }}>
+            <Text style={styles.textDark}>Interval (ms)</Text>
+            <input type="number" value={ctrl.intervalMs} onChange={e => setCtrl({ ...ctrl, intervalMs: Number(e.target.value) })} style={styles.textInput} />
+            <ActionButton title="Apply Interval" color="#3b82f6" onPress={() => toggleControl(ctrl.pingEnabled)} />
+          </View>
+
+          <Text style={[styles.th, { marginBottom: 6 }]}>Currently Logged In</Text>
+          <View style={styles.table}>
+            <View style={styles.tableHeader}>
+              <Text style={[styles.th, { flex: 2 }]}>Name</Text>
+              <Text style={[styles.th, { flex: 1.5 }]}>Reg No</Text>
+              <Text style={[styles.th, { flex: 1.5 }]}>Username</Text>
+              <Text style={[styles.th, { flex: 2 }]}>Last Login</Text>
+            </View>
+            {sessions.loggedIn.map((u, i) => (
+              <View key={i} style={styles.tableRow}>
+                <Text style={[styles.td, { flex: 2 }]}>{u.name}</Text>
+                <Text style={[styles.td, { flex: 1.5 }]}>{u.regNo}</Text>
+                <Text style={[styles.td, { flex: 1.5 }]}>{u.username}</Text>
+                <Text style={[styles.td, { flex: 2 }]}>{u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : ''}</Text>
+              </View>
+            ))}
+          </View>
+
+          <Text style={[styles.th, { marginVertical: 10 }]}>Logged Out</Text>
+          <View style={styles.table}>
+            <View style={styles.tableHeader}>
+              <Text style={[styles.th, { flex: 2 }]}>Name</Text>
+              <Text style={[styles.th, { flex: 1.5 }]}>Reg No</Text>
+              <Text style={[styles.th, { flex: 1.5 }]}>Username</Text>
+              <Text style={[styles.th, { flex: 2 }]}>Last Logout</Text>
+            </View>
+            {sessions.loggedOut.map((u, i) => (
+              <View key={i} style={styles.tableRow}>
+                <Text style={[styles.td, { flex: 2 }]}>{u.name}</Text>
+                <Text style={[styles.td, { flex: 1.5 }]}>{u.regNo}</Text>
+                <Text style={[styles.td, { flex: 1.5 }]}>{u.username}</Text>
+                <Text style={[styles.td, { flex: 2 }]}>{u.lastLogoutAt ? new Date(u.lastLogoutAt).toLocaleString() : ''}</Text>
               </View>
             ))}
           </View>

@@ -5,6 +5,7 @@ import * as SecureStore from 'expo-secure-store';
 import * as Location from 'expo-location';
 import { startBackgroundTracking } from '../utils/background';
 import { Platform } from 'react-native';
+import * as LocalAuthentication from 'expo-local-authentication';
 
 import {
   Alert,
@@ -89,6 +90,83 @@ useEffect(() => {
   loadUser();
 }, []);
 
+// Admin-driven pinger (poll control and send pings at configured interval)
+useEffect(() => {
+  let ctrlTimer;
+  let pingTimer;
+  let pingCount = 0;
+  let challengeIndex = 1;
+  let currentPeriodRef = null;
+
+  const types = ['start','afterStart15','beforeEnd10','end'];
+
+  const stopPing = () => { if (pingTimer) { clearInterval(pingTimer); pingTimer = null; } pingCount = 0; };
+
+  const pollControl = async () => {
+    try {
+      const res = await fetch('https://attendancesystem-backend-mias.onrender.com/admin/ping-control');
+      const data = await res.json();
+      if (!user || !data?.pingEnabled) { stopPing(); return; }
+      const intervalMs = Math.max(2000, Number(data.intervalMs) || 60000);
+      // Determine current period based on last attendance date or time
+      const now = new Date();
+      const periodNumber = 1; // simple demo: period 1; can be improved with timetable
+      if (currentPeriodRef !== periodNumber) { currentPeriodRef = periodNumber; pingCount = 0; challengeIndex = Math.ceil(Math.random()*4); }
+      if (!pingTimer) {
+        pingTimer = setInterval(async () => {
+          try {
+            if (!user) return;
+            if (pingCount >= 4) { stopPing(); return; }
+            // Get location (reuse sendPing flow)
+            let loc;
+            try { loc = await Location.getCurrentPositionAsync({}); } catch {
+              if (Platform.OS === 'web' && navigator.geolocation) {
+                loc = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition((p)=>resolve({ coords: { latitude: p.coords.latitude, longitude: p.coords.longitude } }), reject));
+              }
+            }
+            if (!loc) return;
+            const doBiometric = (pingCount+1) === challengeIndex;
+            let biometricVerified = false;
+            if (doBiometric) {
+              try {
+                // play alarm sound on web
+                if (Platform.OS === 'web' && typeof Audio !== 'undefined') {
+                  const a = new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYBHQAA');
+                  a.play().catch(()=>{});
+                }
+              } catch {}
+              try {
+                if (typeof LocalAuthentication?.authenticateAsync === 'function') {
+                  const res = await LocalAuthentication.authenticateAsync({ promptMessage: 'Verify identity' });
+                  biometricVerified = !!res.success;
+                } else if (Platform.OS === 'web') {
+                  biometricVerified = window.confirm('Biometric challenge: confirm to proceed');
+                }
+              } catch {}
+            }
+            const timestampType = types[Math.min(pingCount, 3)];
+            await fetch('https://attendancesystem-backend-mias.onrender.com/attendance/mark', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                studentId: user._id, periodNumber: periodNumber, timestampType,
+                location: { latitude: loc.coords.latitude, longitude: loc.coords.longitude },
+                biometricType: doBiometric ? 'fingerprint' : null,
+                biometricVerified
+              })
+            });
+            pingCount += 1;
+          } catch {}
+        }, intervalMs);
+      }
+    } catch {
+      stopPing();
+    }
+  };
+
+  ctrlTimer = setInterval(pollControl, 5000);
+  pollControl();
+  return () => { if (ctrlTimer) clearInterval(ctrlTimer); stopPing(); };
+}, [user]);
 
 
   const calculateDistance = (loc1, loc2) => {
@@ -274,6 +352,14 @@ useEffect(() => {
                   try { await SecureStore.deleteItemAsync('user'); } catch {}
                   try {
                     const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+                    // notify backend about logout
+                    try {
+                      if (user?.username) {
+                        await fetch('https://attendancesystem-backend-mias.onrender.com/logout', {
+                          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: user.username })
+                        });
+                      }
+                    } catch {}
                     await AsyncStorage.removeItem('user');
                     await AsyncStorage.removeItem('adminAuth');
                   } catch {}

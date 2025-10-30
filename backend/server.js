@@ -28,7 +28,11 @@ const studentSchema = new mongoose.Schema({
   email: { type: String, unique: true },
   password: String,
   uuid: { type: String, unique: true },
-  location: { latitude: Number, longitude: Number }
+  location: { latitude: Number, longitude: Number },
+  loggedIn: { type: Boolean, default: false },
+  lastLoginAt: { type: Date },
+  lastLogoutAt: { type: Date },
+  biometricEnrolled: { type: Boolean, default: false }
 });
 const Student = mongoose.model('Student', studentSchema);
 
@@ -56,6 +60,9 @@ const pingSchema = new mongoose.Schema({
     latitude: Number,
     longitude: Number
   },
+  locationValid: { type: Boolean, default: false },
+  biometricType: { type: String, enum: ['fingerprint', 'face', null], default: null },
+  biometricVerified: { type: Boolean, default: false },
   timestamp: { type: Date, default: Date.now }
 });
 const Ping = mongoose.model("Ping", pingSchema);
@@ -134,6 +141,10 @@ app.post('/login', async (req, res) => {
     const passwordMatch = await bcrypt.compare(password, user.password);
     if (!passwordMatch) return res.status(401).json({ error: "Invalid password" });
 
+    user.loggedIn = true;
+    user.lastLoginAt = new Date();
+    await user.save();
+
     res.json({
       message: "✅ Login successful",
       user: {
@@ -152,6 +163,23 @@ app.post('/login', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Server error during login" });
+  }
+});
+
+// ------------------- Logout Route -------------------
+app.post('/logout', async (req, res) => {
+  try {
+    const { username } = req.body;
+    if (!username) return res.status(400).json({ error: 'Username required' });
+    const user = await Student.findOne({ username });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    user.loggedIn = false;
+    user.lastLogoutAt = new Date();
+    await user.save();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Logout error:', err);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -183,13 +211,18 @@ app.post('/attendance/mark', async (req, res) => {
       return res.status(403).json({ error: "Outside college location. Attendance not marked." });
     }
 
+    const { biometricType, biometricVerified } = req.body || {};
+
     const ping = new Ping({
       studentId,
       studentName: student.name,
       regNo: student.regNo,
       periodNumber,
       timestampType,
-      location
+      location,
+      locationValid: true,
+      biometricType: biometricType || null,
+      biometricVerified: !!biometricVerified
     });
     await ping.save();
 
@@ -216,7 +249,9 @@ app.post('/attendance/mark', async (req, res) => {
       return R * c <= MAX_RADIUS_METERS;
     });
 
-    if (validPings.length === 4) {
+    const hasBiometric = validPings.some(p => p.biometricVerified === true);
+
+    if (validPings.length >= 4 && hasBiometric) {
       const todayLocal = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
       let attendance = await Attendance.findOne({ studentId, date: todayLocal });
 
@@ -295,7 +330,86 @@ app.get('/userinfo', async (req, res) => {
   }
 });
 
+// ------------------- Admin Control Model -------------------
+const adminControlSchema = new mongoose.Schema({
+  key: { type: String, unique: true },
+  pingEnabled: { type: Boolean, default: false },
+  intervalMs: { type: Number, default: 60000 }
+});
+const AdminControl = mongoose.model('AdminControl', adminControlSchema);
+
 // ------------------- Admin APIs (no auth in demo) -------------------
+// Ping control
+app.get('/admin/ping-control', async (_req, res) => {
+  try {
+    let ctrl = await AdminControl.findOne({ key: 'global' }).lean();
+    if (!ctrl) ctrl = { pingEnabled: false, intervalMs: 60000 };
+    res.json({ pingEnabled: !!ctrl.pingEnabled, intervalMs: ctrl.intervalMs || 60000 });
+  } catch (err) {
+    console.error('Ping control get error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/admin/ping-control', async (req, res) => {
+  try {
+    const { enabled, intervalMs } = req.body;
+    let ctrl = await AdminControl.findOne({ key: 'global' });
+    if (!ctrl) ctrl = new AdminControl({ key: 'global' });
+    if (typeof enabled === 'boolean') ctrl.pingEnabled = enabled;
+    if (!isNaN(Number(intervalMs))) ctrl.intervalMs = Number(intervalMs);
+    await ctrl.save();
+    res.json({ ok: true, pingEnabled: ctrl.pingEnabled, intervalMs: ctrl.intervalMs });
+  } catch (err) {
+    console.error('Ping control set error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Sessions overview
+app.get('/admin/sessions', async (_req, res) => {
+  try {
+    const users = await Student.find({}).select('name regNo username email loggedIn lastLoginAt lastLogoutAt class year').lean();
+    const loggedIn = users.filter(u => u.loggedIn);
+    const loggedOut = users.filter(u => !u.loggedIn);
+    res.json({ loggedIn, loggedOut, total: users.length });
+  } catch (err) {
+    console.error('Admin sessions error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Attendance detail per day with ping breakdown
+app.get('/admin/attendance/detail', async (req, res) => {
+  try {
+    const { studentId, date } = req.query;
+    if (!studentId) return res.status(400).json({ error: 'studentId required' });
+    const theDate = date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    const startDate = new Date(`${theDate}T00:00:00+05:30`);
+    const endDate = new Date(`${theDate}T23:59:59+05:30`);
+    const pings = await Ping.find({ studentId, timestamp: { $gte: startDate, $lte: endDate } }).sort({ timestamp: 1 }).lean();
+    const byPeriod = {};
+    for (const p of pings) {
+      const key = p.periodNumber || 0;
+      if (!byPeriod[key]) byPeriod[key] = [];
+      byPeriod[key].push({
+        time: p.timestamp,
+        type: p.timestampType,
+        locationValid: p.locationValid !== false, // default true for saved ones
+        biometricVerified: !!p.biometricVerified,
+        biometricType: p.biometricType || null,
+        lat: p.location?.latitude,
+        lon: p.location?.longitude,
+      });
+    }
+    const periods = Object.keys(byPeriod).sort((a,b)=>Number(a)-Number(b)).map(k => ({ periodNumber: Number(k), pings: byPeriod[k] }));
+    res.json({ date: theDate, studentId, periods });
+  } catch (err) {
+    console.error('Admin attendance detail error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // List all users
 app.get('/admin/users', async (req, res) => {
   try {
