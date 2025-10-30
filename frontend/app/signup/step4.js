@@ -92,7 +92,8 @@ export default function Step4() {
         try { await markSignupCompleted(); } catch {}
         const uname = (data?.user?.username) || signupData?.username;
         Alert.alert('Signup Complete', 'Next, set up biometrics.');
-        router.replace({ pathname: '/signup/step5', params: { username: uname } });
+        const target = `/signup/step5${uname ? `?username=${encodeURIComponent(uname)}` : ''}`;
+        try { router.replace(target); } catch {}
         if (Platform.OS === 'web') {
           setTimeout(() => {
             try {
