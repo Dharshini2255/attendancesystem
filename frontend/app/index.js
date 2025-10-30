@@ -10,6 +10,14 @@ export default function IndexScreen() {
 
   useEffect(() => {
     if (hydrated) setLoading(false);
+    try {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('admin') === '1' || window.location.hash === '#admin') {
+          router.replace('/admin/AdminDashboard');
+        }
+      }
+    } catch {}
   }, [hydrated]);
 
   if (loading) {
