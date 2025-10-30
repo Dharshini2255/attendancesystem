@@ -297,9 +297,26 @@ app.get('/userinfo', async (req, res) => {
 
 // ------------------- Admin APIs (no auth in demo) -------------------
 // List all users
-app.get('/admin/users', async (_req, res) => {
+app.get('/admin/users', async (req, res) => {
   try {
-    const users = await Student.find({}).sort({ name: 1 }).lean();
+    const { q } = req.query;
+    let filter = {};
+    if (q) {
+      const re = new RegExp(q, 'i');
+      const or = [
+        { name: re },
+        { regNo: re },
+        { username: re },
+        { email: re },
+        { uuid: re },
+        { class: re },
+        { phone: re },
+      ];
+      if (!isNaN(Number(q))) or.push({ year: Number(q) });
+      if (mongoose.Types.ObjectId.isValid(q)) or.push({ _id: q });
+      filter = { $or: or };
+    }
+    const users = await Student.find(filter).sort({ name: 1 }).lean();
     const safe = users.map(u => { const { password, ...rest } = u; return rest; });
     res.json(safe);
   } catch (err) {
@@ -311,12 +328,34 @@ app.get('/admin/users', async (_req, res) => {
 // Attendance query: by date range and optional student, grouped by granularity
 app.get('/admin/attendance', async (req, res) => {
   try {
-    const { from, to, studentId, granularity = 'day' } = req.query;
+    const { from, to, studentId, granularity = 'day', q } = req.query;
     const fromDate = from || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
     const toDate = to || fromDate;
 
+    // Optional multi-field query -> resolve to matching student IDs
+    let studentFilter = {};
+    if (q) {
+      const re = new RegExp(q, 'i');
+      const or = [
+        { name: re },
+        { regNo: re },
+        { username: re },
+        { email: re },
+        { uuid: re },
+        { class: re },
+        { phone: re },
+      ];
+      if (!isNaN(Number(q))) or.push({ year: Number(q) });
+      if (mongoose.Types.ObjectId.isValid(q)) or.push({ _id: q });
+      const matching = await Student.find({ $or: or }).select('_id').lean();
+      const ids = matching.map(s => s._id);
+      if (ids.length === 0) return res.json({ rows: [] });
+      studentFilter = { studentId: { $in: ids } };
+    }
+
     const records = await Attendance.find({
       ...(studentId ? { studentId } : {}),
+      ...studentFilter,
       date: { $gte: fromDate, $lte: toDate }
     }).lean();
 
@@ -384,7 +423,7 @@ app.patch('/admin/attendance', async (req, res) => {
 // Pings with coordinates for map/view
 app.get('/admin/pings', async (req, res) => {
   try {
-    const { studentId, from, to, date } = req.query;
+    const { studentId, from, to, date, q } = req.query;
     let startDate, endDate;
     if (date) {
       startDate = new Date(`${date}T00:00:00+05:30`);
@@ -397,6 +436,24 @@ app.get('/admin/pings', async (req, res) => {
     }
     const query = { timestamp: { $gte: startDate, $lte: endDate } };
     if (studentId) query.studentId = studentId;
+    if (q) {
+      const re = new RegExp(q, 'i');
+      const or = [
+        { name: re },
+        { regNo: re },
+        { username: re },
+        { email: re },
+        { uuid: re },
+        { class: re },
+        { phone: re },
+      ];
+      if (!isNaN(Number(q))) or.push({ year: Number(q) });
+      if (mongoose.Types.ObjectId.isValid(q)) or.push({ _id: q });
+      const matching = await Student.find({ $or: or }).select('_id').lean();
+      const ids = matching.map(s => s._id);
+      if (ids.length === 0) return res.json([]);
+      query.studentId = { $in: ids };
+    }
     const pings = await Ping.find(query).sort({ timestamp: 1 }).lean();
     res.json(pings);
   } catch (err) {
@@ -413,9 +470,26 @@ const toCsv = (rows, headers) => {
   return h + '\n' + body + '\n';
 };
 
-app.get('/admin/export/users.csv', async (_req, res) => {
+app.get('/admin/export/users.csv', async (req, res) => {
   try {
-    const users = await Student.find({}).sort({ name: 1 }).lean();
+    const { q } = req.query;
+    let filter = {};
+    if (q) {
+      const re = new RegExp(q, 'i');
+      const or = [
+        { name: re },
+        { regNo: re },
+        { username: re },
+        { email: re },
+        { uuid: re },
+        { class: re },
+        { phone: re },
+      ];
+      if (!isNaN(Number(q))) or.push({ year: Number(q) });
+      if (mongoose.Types.ObjectId.isValid(q)) or.push({ _id: q });
+      filter = { $or: or };
+    }
+    const users = await Student.find(filter).sort({ name: 1 }).lean();
     const rows = users.map(u => ({ name: u.name, regNo: u.regNo, class: u.class, year: u.year, phone: u.phone, username: u.username, email: u.email, uuid: u.uuid }));
     const csv = toCsv(rows, ['name','regNo','class','year','phone','username','email','uuid']);
     res.setHeader('Content-Type', 'text/csv');
@@ -429,10 +503,31 @@ app.get('/admin/export/users.csv', async (_req, res) => {
 
 app.get('/admin/export/attendance.csv', async (req, res) => {
   try {
-    const { from, to, studentId } = req.query;
+    const { from, to, studentId, q } = req.query;
     const f = from || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
     const t = to || f;
-    const records = await Attendance.find({ ...(studentId ? { studentId } : {}), date: { $gte: f, $lte: t } }).lean();
+
+    let studentFilter = {};
+    if (q) {
+      const re = new RegExp(q, 'i');
+      const or = [
+        { name: re },
+        { regNo: re },
+        { username: re },
+        { email: re },
+        { uuid: re },
+        { class: re },
+        { phone: re },
+      ];
+      if (!isNaN(Number(q))) or.push({ year: Number(q) });
+      if (mongoose.Types.ObjectId.isValid(q)) or.push({ _id: q });
+      const matching = await Student.find({ $or: or }).select('_id').lean();
+      const ids = matching.map(s => s._id);
+      if (ids.length === 0) return res.send(toCsv([], ['date','studentName','regNo','periodNumber','status']));
+      studentFilter = { studentId: { $in: ids } };
+    }
+
+    const records = await Attendance.find({ ...(studentId ? { studentId } : {}), ...studentFilter, date: { $gte: f, $lte: t } }).lean();
     const rows = [];
     for (const r of records) {
       for (const p of r.periods || []) {

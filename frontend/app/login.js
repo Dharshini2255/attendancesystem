@@ -41,7 +41,7 @@ export default function LoginScreen() {
       try {
         const admin = await AsyncStorage.getItem('adminAuth');
         if (admin === 'true') {
-          router.replace('/AdminDashboard');
+          router.replace('/admin/AdminDashboard');
           return;
         }
       } catch {}
@@ -69,12 +69,12 @@ export default function LoginScreen() {
     if (username === 'Adminsystem@123' && password === 'Admin@sdp2255') {
       try { await AsyncStorage.setItem('adminAuth', 'true'); } catch {}
       Alert.alert('✅ Admin Login', 'Welcome, Admin');
-      router.replace('/AdminDashboard');
+      router.replace('/admin/AdminDashboard');
       if (Platform.OS === 'web') {
         setTimeout(() => {
           try {
-            if (typeof window !== 'undefined' && !window.location.pathname.endsWith('/AdminDashboard')) {
-              window.location.assign('/AdminDashboard');
+            if (typeof window !== 'undefined' && !window.location.pathname.endsWith('/admin/AdminDashboard')) {
+              window.location.assign('/admin/AdminDashboard');
             }
           } catch {}
         }, 50);
