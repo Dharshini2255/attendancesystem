@@ -18,6 +18,9 @@ export default function Step5() {
         let hw = false, en = false;
         try { hw = await LocalAuthentication.hasHardwareAsync(); } catch {}
         try { en = await LocalAuthentication.isEnrolledAsync(); } catch {}
+        if (Platform.OS === 'web') {
+          hw = hw || (typeof window !== 'undefined' && 'PublicKeyCredential' in window);
+        }
         setSupported(!!hw);
         setEnrolled(!!en);
       } finally { setBusy(false); }
@@ -26,12 +29,35 @@ export default function Step5() {
 
   const enrollNow = async () => {
     try {
-      const res = await LocalAuthentication.authenticateAsync({ promptMessage: 'Set up biometrics' });
-      if (!res.success) {
-        Alert.alert('Biometric failed', 'Please try again.');
-        return;
+      let ok = false;
+      if (Platform.OS === 'web') {
+        try {
+          if ('PublicKeyCredential' in window && navigator.credentials?.create) {
+            const challenge = new Uint8Array(32);
+            window.crypto.getRandomValues(challenge);
+            const userId = new Uint8Array(16);
+            window.crypto.getRandomValues(userId);
+            await navigator.credentials.create({
+              publicKey: {
+                challenge,
+                rp: { name: 'Attendance System', id: window.location.hostname },
+                user: { id: userId, name: username || 'user', displayName: username || 'user' },
+                pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
+                authenticatorSelection: { userVerification: 'preferred' },
+                timeout: 60000,
+                attestation: 'none'
+              }
+            });
+            ok = true;
+          }
+        } catch (e) {
+          ok = window.confirm('Device biometrics not available. Mark enrollment anyway?');
+        }
+      } else {
+        const res = await LocalAuthentication.authenticateAsync({ promptMessage: 'Set up biometrics' });
+        ok = !!res.success;
       }
-      // Mark on server
+      if (!ok) { Alert.alert('Biometric failed', 'Please try again.'); return; }
       const r = await fetch('https://attendancesystem-backend-mias.onrender.com/biometric/enroll', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username })
       });

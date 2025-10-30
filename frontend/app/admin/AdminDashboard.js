@@ -95,7 +95,9 @@ export default function AdminDashboard() {
     try {
       const res = await fetch(`${api}/admin/ping-control`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled, intervalMs: ctrl.intervalMs }) });
       const data = await res.json();
-      setCtrl({ pingEnabled: !!data.pingEnabled, intervalMs: data.intervalMs || ctrl.intervalMs });
+      setCtrl({ pingEnabled: !!data.pingEnabled, intervalMs: data.intervalMs || ctrl.intervalMs, unit: ctrl.unit });
+      // When enabling, also refresh attendance tab periodically
+      if (enabled && tab==='attendance') loadAttendance();
     } catch {}
   };
 
@@ -120,6 +122,21 @@ export default function AdminDashboard() {
       <Text style={styles.btnText}>{title}</Text>
     </TouchableOpacity>
   );
+
+  // Auto-refresh active tab
+  useEffect(() => {
+    if (!authorized) return;
+    let t;
+    const tick = () => {
+      if (tab === 'users') loadUsers();
+      else if (tab === 'attendance') loadAttendance();
+      else if (tab === 'pings') loadPings();
+      else if (tab === 'sessions') { loadSessions(); readControl(); }
+    };
+    tick();
+    t = setInterval(tick, 5000);
+    return () => { if (t) clearInterval(t); };
+  }, [authorized, tab, query, from, to, granularity, ctrl.pingEnabled]);
 
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
@@ -244,9 +261,25 @@ export default function AdminDashboard() {
           </View>
 
           <View style={{ marginBottom: 12 }}>
-            <Text style={styles.textDark}>Interval (ms)</Text>
-            <input type="number" value={ctrl.intervalMs} onChange={e => setCtrl({ ...ctrl, intervalMs: Number(e.target.value) })} style={styles.textInput} />
-            <ActionButton title="Apply Interval" color="#3b82f6" onPress={() => toggleControl(ctrl.pingEnabled)} />
+            <Text style={styles.textDark}>Time interval</Text>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input type="number" min={1} value={Math.max(1, Math.round((ctrl.intervalMs || 60000)/1000))}
+                     onChange={e => setCtrl({ ...ctrl, intervalMs: Math.max(1, Number(e.target.value)) * 1000 })}
+                     style={{ ...styles.textInput, width: 120 }} />
+              <select value={ctrl.unit || 'seconds'} onChange={e => {
+                const unit = e.target.value; const vSec = Math.max(1, Math.round((ctrl.intervalMs||60000)/1000));
+                const factor = unit==='seconds'?1: unit==='minutes'?60:3600; setCtrl({ ...ctrl, unit, intervalMs: vSec*1000*factor});
+              }} style={{ ...styles.select, width: 160 }}>
+                <option value="seconds">Seconds</option>
+                <option value="minutes">Minutes</option>
+                <option value="hours">Hours</option>
+              </select>
+            </div>
+            <div style={{ height: 8 }} />
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <ActionButton title={ctrl.pingEnabled ? 'Stop' : 'Start'} color={ctrl.pingEnabled ? '#ef4444' : '#22c55e'} onPress={() => toggleControl(!ctrl.pingEnabled)} />
+              <ActionButton title="Apply Interval" color="#3b82f6" onPress={() => toggleControl(ctrl.pingEnabled)} />
+            </View>
           </View>
 
           <Text style={[styles.th, { marginBottom: 6 }]}>Currently Logged In</Text>
