@@ -2,22 +2,31 @@ import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Button, StyleSheet, Text, View } from 'react-native';
 import { useSignup } from '../context/SignupContext';
+import AdminDashboard from './admin/AdminDashboard';
 
 export default function IndexScreen() {
   const router = useRouter();
   const { hydrated, resumeSignup, currentStep, resetSignup } = useSignup();
   const [loading, setLoading] = useState(true);
+  const [showAdminInline, setShowAdminInline] = useState(false);
 
   useEffect(() => {
     if (hydrated) setLoading(false);
-    try {
-      if (typeof window !== 'undefined') {
-        const params = new URLSearchParams(window.location.search);
-        if (params.get('admin') === '1' || window.location.hash === '#admin') {
-          router.replace('/admin/AdminDashboard');
+    (async () => {
+      try {
+        if (typeof window !== 'undefined') {
+          const params = new URLSearchParams(window.location.search);
+          if (params.get('admin') === '1' || window.location.hash === '#admin') {
+            setShowAdminInline(true);
+            return;
+          }
         }
-      }
-    } catch {}
+        // also check persisted admin flag
+        const { default: AsyncStorage } = await import('@react-native-async-storage/async-storage');
+        const v = await AsyncStorage.getItem('adminAuth');
+        if (v === 'true') setShowAdminInline(true);
+      } catch {}
+    })();
   }, [hydrated]);
 
   if (loading) {
@@ -25,6 +34,14 @@ export default function IndexScreen() {
       <View style={styles.container}>
         <ActivityIndicator size="large" color="#fff" />
         <Text style={styles.text}>Loading...</Text>
+      </View>
+    );
+  }
+
+  if (showAdminInline) {
+    return (
+      <View style={{ flex: 1 }}>
+        <AdminDashboard />
       </View>
     );
   }

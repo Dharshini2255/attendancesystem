@@ -41,7 +41,11 @@ export default function LoginScreen() {
       try {
         const admin = await AsyncStorage.getItem('adminAuth');
         if (admin === 'true') {
-          router.replace('/admin/AdminDashboard');
+          if (Platform.OS === 'web') {
+            window.location.assign('/?admin=1#admin');
+          } else {
+            router.replace('/admin/AdminDashboard');
+          }
           return;
         }
       } catch {}
