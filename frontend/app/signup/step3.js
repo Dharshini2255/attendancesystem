@@ -31,8 +31,11 @@ export default function Step3() {
  // replace with your server IP
 
   useEffect(() => {
-    if (currentStep < 3) router.replace(`/signup/step${currentStep}`);
-  }, [currentStep]);
+    // Allow entry as long as step2 data (username) exists; avoids race on currentStep
+    if (!signupData?.username) {
+      router.replace('/signup/step2');
+    }
+  }, [signupData?.username]);
 
   // Debounced real-time email check
   const checkEmailExists = async (emailToCheck) => {
