@@ -119,7 +119,8 @@ app.post('/signup', async (req, res) => {
       email,
       password: hashedPassword,
       location,
-      uuid
+      uuid,
+      biometricEnrolled: false
     });
 
     await newUser.save();
@@ -127,6 +128,22 @@ app.post('/signup', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ------------------- Biometric Enroll -------------------
+app.post('/biometric/enroll', async (req, res) => {
+  try {
+    const { username } = req.body;
+    if (!username) return res.status(400).json({ error: 'Username required' });
+    const user = await Student.findOne({ username });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    user.biometricEnrolled = true;
+    await user.save();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Biometric enroll error:', err);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -250,6 +267,10 @@ app.post('/attendance/mark', async (req, res) => {
     });
 
     const hasBiometric = validPings.some(p => p.biometricVerified === true);
+
+    if (!student.biometricEnrolled) {
+      return res.status(403).json({ error: 'Biometric enrollment required. Please complete biometric setup.' });
+    }
 
     if (validPings.length >= 4 && hasBiometric) {
       const todayLocal = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });

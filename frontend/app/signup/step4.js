@@ -24,7 +24,6 @@ export default function Step4() {
 
   const BACKEND_URL = 'https://attendancesystem-backend-mias.onrender.com/signup';
 
-
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -89,50 +88,28 @@ export default function Step4() {
       const data = await response.json();
 
       if (response.ok) {
-        await markSignupCompleted();
-        await resetSignup();
-
-        Alert.alert('Signup Complete', 'Please log in to continue.');
-        router.replace('/login');
+        // Proceed to biometric enrollment step
+        try { await markSignupCompleted(); } catch {}
+        const uname = (data?.user?.username) || signupData?.username;
+        Alert.alert('Signup Complete', 'Next, set up biometrics.');
+        router.replace({ pathname: '/signup/step5', params: { username: uname } });
         if (Platform.OS === 'web') {
           setTimeout(() => {
             try {
-              if (typeof window !== 'undefined' && !window.location.pathname.endsWith('/login')) {
-                window.location.assign('/login');
+              if (typeof window !== 'undefined' && !window.location.pathname.endsWith('/signup/step5')) {
+                const q = uname ? `?username=${encodeURIComponent(uname)}` : '';
+                window.location.assign(`/signup/step5${q}`);
               }
             } catch {}
           }, 50);
         }
-      }
-
-      else {
-        Alert.alert('Error', data.error || 'Signup failed.');
-        try { await resetSignup(); } catch {}
-        router.replace('/login');
-        if (Platform.OS === 'web') {
-          setTimeout(() => {
-            try {
-              if (typeof window !== 'undefined' && !window.location.pathname.endsWith('/login')) {
-                window.location.assign('/login');
-              }
-            } catch {}
-          }, 50);
-        }
+      } else {
+        // Stay on this screen to let the user fix inputs; do not redirect
+        Alert.alert('Signup Failed', data.error || 'Could not create account. Please review your details and try again.');
       }
     } catch (err) {
       console.error(err);
-      Alert.alert('Network Error', 'Could not connect to server.');
-      try { await resetSignup(); } catch {}
-      router.replace('/login');
-      if (Platform.OS === 'web') {
-        setTimeout(() => {
-          try {
-            if (typeof window !== 'undefined' && !window.location.pathname.endsWith('/login')) {
-              window.location.assign('/login');
-            }
-          } catch {}
-        }, 50);
-      }
+      Alert.alert('Network Error', 'Could not connect to server. Please try again.');
     }
   };
 
