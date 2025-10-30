@@ -37,6 +37,14 @@ export default function LoginScreen() {
   // If a user is already stored (web or native), redirect to /home
   useEffect(() => {
     (async () => {
+      // if admin flag set, go straight to dashboard
+      try {
+        const admin = await AsyncStorage.getItem('adminAuth');
+        if (admin === 'true') {
+          router.replace('/AdminDashboard');
+          return;
+        }
+      } catch {}
       let storedUser = await safeSecureGet('user');
       if (!storedUser) {
         try { storedUser = await AsyncStorage.getItem('user'); } catch {}
@@ -54,6 +62,23 @@ export default function LoginScreen() {
   const handleLogin = async () => {
     if (!username || !password) {
       Alert.alert('Missing Fields', 'Please enter both username and password.');
+      return;
+    }
+
+    // Admin shortcut login (no server call)
+    if (username === 'Adminsystem@123' && password === 'Admin@sdp2255') {
+      try { await AsyncStorage.setItem('adminAuth', 'true'); } catch {}
+      Alert.alert('✅ Admin Login', 'Welcome, Admin');
+      router.replace('/AdminDashboard');
+      if (Platform.OS === 'web') {
+        setTimeout(() => {
+          try {
+            if (typeof window !== 'undefined' && !window.location.pathname.endsWith('/AdminDashboard')) {
+              window.location.assign('/AdminDashboard');
+            }
+          } catch {}
+        }, 50);
+      }
       return;
     }
 
