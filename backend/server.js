@@ -295,6 +295,160 @@ app.get('/userinfo', async (req, res) => {
   }
 });
 
+// ------------------- Admin APIs (no auth in demo) -------------------
+// List all users
+app.get('/admin/users', async (_req, res) => {
+  try {
+    const users = await Student.find({}).sort({ name: 1 }).lean();
+    const safe = users.map(u => { const { password, ...rest } = u; return rest; });
+    res.json(safe);
+  } catch (err) {
+    console.error('Admin users error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Attendance query: by date range and optional student, grouped by granularity
+app.get('/admin/attendance', async (req, res) => {
+  try {
+    const { from, to, studentId, granularity = 'day' } = req.query;
+    const fromDate = from || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    const toDate = to || fromDate;
+
+    const records = await Attendance.find({
+      ...(studentId ? { studentId } : {}),
+      date: { $gte: fromDate, $lte: toDate }
+    }).lean();
+
+    // Flatten to rows
+    const rows = [];
+    for (const r of records) {
+      for (const p of r.periods || []) {
+        rows.push({
+          date: r.date,
+          studentId: String(r.studentId),
+          studentName: r.studentName,
+          regNo: r.regNo,
+          periodNumber: p.periodNumber,
+          status: p.status
+        });
+      }
+    }
+
+    if (granularity === 'day') return res.json({ rows });
+
+    // Simple groupers
+    const groupKey = (d) => {
+      const [y, m, day] = d.split('-');
+      if (granularity === 'month') return `${y}-${m}`;
+      if (granularity === 'year') return `${y}`;
+      if (granularity === 'week') {
+        const dt = new Date(`${d}T00:00:00+05:30`);
+        const onejan = new Date(dt.getFullYear(), 0, 1);
+        const week = Math.ceil((((dt - onejan) / 86400000) + onejan.getDay() + 1) / 7);
+        return `${y}-W${week}`;
+      }
+      return d;
+    };
+
+    const grouped = {};
+    for (const r of rows) {
+      const key = `${r.studentId}|${groupKey(r.date)}`;
+      if (!grouped[key]) grouped[key] = { studentId: r.studentId, studentName: r.studentName, regNo: r.regNo, bucket: groupKey(r.date), present: 0, absent: 0 };
+      if (r.status === 'present') grouped[key].present += 1; else grouped[key].absent += 1;
+    }
+    res.json({ rows: Object.values(grouped) });
+  } catch (err) {
+    console.error('Admin attendance error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update a single attendance cell
+app.patch('/admin/attendance', async (req, res) => {
+  try {
+    const { studentId, date, periodNumber, status } = req.body;
+    if (!studentId || !date || !periodNumber || !status) return res.status(400).json({ error: 'Missing fields' });
+    let attendance = await Attendance.findOne({ studentId, date });
+    if (!attendance) attendance = new Attendance({ studentId, date, studentName: '', regNo: '', periods: [] });
+    const existing = attendance.periods.find(p => p.periodNumber === Number(periodNumber));
+    if (existing) existing.status = status; else attendance.periods.push({ periodNumber: Number(periodNumber), status });
+    await attendance.save();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Admin attendance patch error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Pings with coordinates for map/view
+app.get('/admin/pings', async (req, res) => {
+  try {
+    const { studentId, from, to, date } = req.query;
+    let startDate, endDate;
+    if (date) {
+      startDate = new Date(`${date}T00:00:00+05:30`);
+      endDate = new Date(`${date}T23:59:59+05:30`);
+    } else {
+      const f = from || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+      const t = to || f;
+      startDate = new Date(`${f}T00:00:00+05:30`);
+      endDate = new Date(`${t}T23:59:59+05:30`);
+    }
+    const query = { timestamp: { $gte: startDate, $lte: endDate } };
+    if (studentId) query.studentId = studentId;
+    const pings = await Ping.find(query).sort({ timestamp: 1 }).lean();
+    res.json(pings);
+  } catch (err) {
+    console.error('Admin pings error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// CSV exports
+const toCsv = (rows, headers) => {
+  const esc = (v) => (v == null ? '' : String(v).replace(/"/g, '""'));
+  const h = headers.map(x => `"${x}"`).join(',');
+  const body = rows.map(r => headers.map(k => `"${esc(r[k])}"`).join(',')).join('\n');
+  return h + '\n' + body + '\n';
+};
+
+app.get('/admin/export/users.csv', async (_req, res) => {
+  try {
+    const users = await Student.find({}).sort({ name: 1 }).lean();
+    const rows = users.map(u => ({ name: u.name, regNo: u.regNo, class: u.class, year: u.year, phone: u.phone, username: u.username, email: u.email, uuid: u.uuid }));
+    const csv = toCsv(rows, ['name','regNo','class','year','phone','username','email','uuid']);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="users.csv"');
+    res.send(csv);
+  } catch (err) {
+    console.error('Export users error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/admin/export/attendance.csv', async (req, res) => {
+  try {
+    const { from, to, studentId } = req.query;
+    const f = from || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    const t = to || f;
+    const records = await Attendance.find({ ...(studentId ? { studentId } : {}), date: { $gte: f, $lte: t } }).lean();
+    const rows = [];
+    for (const r of records) {
+      for (const p of r.periods || []) {
+        rows.push({ date: r.date, studentName: r.studentName, regNo: r.regNo, periodNumber: p.periodNumber, status: p.status });
+      }
+    }
+    const csv = toCsv(rows, ['date','studentName','regNo','periodNumber','status']);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="attendance.csv"');
+    res.send(csv);
+  } catch (err) {
+    console.error('Export attendance error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ------------------- Server Startup -------------------
 const PORT = process.env.PORT;
 app.listen(PORT, () => {
