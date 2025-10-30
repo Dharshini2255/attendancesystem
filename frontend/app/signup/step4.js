@@ -27,26 +27,29 @@ export default function Step4() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          Alert.alert('Location Required', 'Please allow location access.');
-          return;
+        let gotLoc = null;
+        try {
+          const { status } = await Location.requestForegroundPermissionsAsync();
+          if (status === 'granted') {
+            const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High, timeout: 8000 });
+            gotLoc = { latitude: loc.coords.latitude, longitude: loc.coords.longitude, timestamp: loc.timestamp };
+          }
+        } catch {}
+        // Web/browser fallback
+        if (!gotLoc && Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.geolocation) {
+          try {
+            const pos = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 }));
+            gotLoc = { latitude: pos.coords.latitude, longitude: pos.coords.longitude, timestamp: Date.now() };
+          } catch (e) {
+            console.warn('Browser geolocation failed', e);
+          }
         }
-
-        const loc = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Highest,
-          maximumAge: 0,
-          timeout: 10000
-        });
-
-        setLocation({
-          latitude: loc.coords.latitude,
-          longitude: loc.coords.longitude,
-          timestamp: loc.timestamp
-        });
-
+        if (!gotLoc) {
+          Alert.alert('Location Required', 'Please allow location permission and try again.');
+        } else {
+          setLocation(gotLoc);
+        }
         const generatedId = uuid.v4();
-        console.log('Generated UUID:', generatedId);
         setUuidValue(generatedId);
       } catch (err) {
         console.error('Error fetching location or UUID:', err);
@@ -136,18 +139,21 @@ export default function Step4() {
             </View>
           );
         })}
+        <View style={styles.row}>
+          <Text style={styles.label}>Location:</Text>
+          <Text style={styles.value}>
+            {location ? `${location.latitude}, ${location.longitude}` : 'Not available'}
+          </Text>
+        </View>
+        {!location && (
+          <Text style={{ color: '#aaa', marginBottom: 10 }}>
+            Allow location permission and press "Retry Location".
+          </Text>
+        )}
         {location && (
-          <>
-            <View style={styles.row}>
-              <Text style={styles.label}>Location:</Text>
-              <Text style={styles.value}>
-                {location.latitude}, {location.longitude}
-              </Text>
-            </View>
-            <Text style={{ color: '#aaa', marginBottom: 10 }}>
-              Location fetched at: {new Date(location.timestamp).toLocaleTimeString()}
-            </Text>
-          </>
+          <Text style={{ color: '#aaa', marginBottom: 10 }}>
+            Location fetched at: {new Date(location.timestamp).toLocaleTimeString()}
+          </Text>
         )}
         {uuidValue && (
           <View style={styles.row}>
@@ -156,7 +162,33 @@ export default function Step4() {
           </View>
         )}
       </View>
-      <Button title="Finish" onPress={handleFinish} />
+      {!location && (
+        <Button title="Retry Location" onPress={() => {
+          // re-run effect logic quickly
+          (async () => {
+            setLoading(true);
+            try {
+              let gotLoc = null;
+              try {
+                const { status } = await Location.requestForegroundPermissionsAsync();
+                if (status === 'granted') {
+                  const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High, timeout: 8000 });
+                  gotLoc = { latitude: loc.coords.latitude, longitude: loc.coords.longitude, timestamp: loc.timestamp };
+                }
+              } catch {}
+              if (!gotLoc && Platform.OS === 'web' && navigator.geolocation) {
+                try {
+                  const pos = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 }));
+                  gotLoc = { latitude: pos.coords.latitude, longitude: pos.coords.longitude, timestamp: Date.now() };
+                } catch {}
+              }
+              if (gotLoc) setLocation(gotLoc);
+            } finally { setLoading(false); }
+          })();
+        }} />
+      )}
+      <View style={{ height: 10 }} />
+      <Button title="Finish & Continue to Biometrics" onPress={handleFinish} />
     </ScrollView>
   );
 }
