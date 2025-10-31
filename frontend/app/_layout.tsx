@@ -11,15 +11,13 @@ function ProtectedStack({ children }: { children: React.ReactNode }) {
   const segments = useSegments();
   const { hydrated } = useSignup();
 
-  // Avoid forcing navigation; this caused bounce from /login to /
   useEffect(() => {
     if (!hydrated) return;
-    // Only redirect if we are truly at the root path
-    try {
-      if (typeof window !== 'undefined' && window.location.pathname === '/') {
-        // Stay on index; no action needed
-      }
-    } catch {}
+
+    const currentPath = segments.join('/');
+    if (currentPath === '') {
+      router.replace('/'); // Always start at index
+    }
   }, [hydrated, segments]);
 
   return <>{children}</>;
@@ -46,8 +44,6 @@ export default function RootLayout() {
             <Stack.Screen name="signup/step2" options={{ title: 'Signup - Step 2' }} />
             <Stack.Screen name="signup/step3" options={{ title: 'Signup - Step 3' }} />
             <Stack.Screen name="signup/step4" options={{ title: 'Signup - Step 4' }} />
-            <Stack.Screen name="signup/step5" options={{ title: 'Signup - Step 5' }} />
-            <Stack.Screen name="admin" options={{ headerShown: false }} />
             <Stack.Screen name="home" options={{ headerShown: false }} />
           </Stack>
         </ProtectedStack>

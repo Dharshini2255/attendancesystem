@@ -13,8 +13,6 @@ import {
 } from 'react-native';
 
 const isWeb = Platform.OS === 'web';
-
-// Secure getters/setters with fallback
 const safeSecureGet = async (key) => {
   try {
     if (!isWeb && typeof SecureStore.getItemAsync === 'function') {
@@ -23,7 +21,6 @@ const safeSecureGet = async (key) => {
   } catch {}
   return null;
 };
-
 const safeSecureSet = async (key, value) => {
   try {
     if (!isWeb && typeof SecureStore.setItemAsync === 'function') {
@@ -37,29 +34,30 @@ export default function LoginScreen() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
 
-  // 🔁 Auto redirect if already logged in
+  // If a user is already stored (web or native), redirect to /home
   useEffect(() => {
     (async () => {
+      // if admin flag set, go straight to dashboard
       try {
-        let storedUser = await safeSecureGet('user');
-        if (!storedUser) {
-          try { storedUser = await AsyncStorage.getItem('user'); } catch {}
-        }
-
-        if (storedUser) {
-          const parsed = JSON.parse(storedUser);
-          // 👇 Redirect based on role
-          if (parsed.role === 'admin') {
-            router.replace('/admin');
-          } else {
-            router.replace('/home');
-          }
+        const admin = await AsyncStorage.getItem('adminAuth');
+        if (admin === 'true') {
+          router.replace('/admin/AdminDashboard');
+          return;
         }
       } catch {}
+      let storedUser = await safeSecureGet('user');
+      if (!storedUser) {
+        try { storedUser = await AsyncStorage.getItem('user'); } catch {}
+      }
+      if (storedUser) {
+        router.replace('/home');
+      }
     })();
   }, []);
 
-  const BACKEND_URL = 'https://attendancesystem-backend-mias.onrender.com/login';
+ const BACKEND_URL = 'https://attendancesystem-backend-mias.onrender.com/login';
+
+ // ✅ Replace with your local IP
 
   const handleLogin = async () => {
     if (!username || !password) {
@@ -67,21 +65,16 @@ export default function LoginScreen() {
       return;
     }
 
-    // 🧠 Admin shortcut login
+    // Admin shortcut login (no server call)
     if (username === 'Adminsystem@123' && password === 'Admin@sdp2255') {
-      const adminData = { name: 'Admin', role: 'admin' };
-      try {
-        await safeSecureSet('user', JSON.stringify(adminData));
-        await AsyncStorage.setItem('user', JSON.stringify(adminData));
-      } catch {}
-
+      try { await AsyncStorage.setItem('adminAuth', 'true'); } catch {}
       Alert.alert('✅ Admin Login', 'Welcome, Admin');
-      router.replace('/admin');
+      router.replace('/admin/AdminDashboard');
       if (Platform.OS === 'web') {
         setTimeout(() => {
           try {
-            if (typeof window !== 'undefined' && window.location.pathname !== '/admin') {
-              window.history.pushState({}, '', '/admin');
+            if (typeof window !== 'undefined' && !window.location.pathname.endsWith('/admin/AdminDashboard')) {
+              window.location.assign('/admin/AdminDashboard');
             }
           } catch {}
         }, 50);
@@ -89,7 +82,6 @@ export default function LoginScreen() {
       return;
     }
 
-    // 🧠 Normal user login
     try {
       const response = await fetch(BACKEND_URL, {
         method: 'POST',
@@ -100,10 +92,11 @@ export default function LoginScreen() {
       const data = await response.json();
 
       if (response.ok) {
-        // ✅ Save user securely
+        // ✅ Store user info securely (SecureStore) and fallback (AsyncStorage)
         await safeSecureSet('user', JSON.stringify(data.user));
         try { await AsyncStorage.setItem('user', JSON.stringify(data.user)); } catch {}
 
+        // ✅ Show welcome message and navigate
         Alert.alert('✅ Login Successful', `Welcome ${data.user.name}`);
         router.replace('/home');
         if (Platform.OS === 'web') {
@@ -115,6 +108,7 @@ export default function LoginScreen() {
             } catch {}
           }, 50);
         }
+
       } else {
         Alert.alert('❌ Login Failed', data.error || 'Invalid credentials');
       }

@@ -90,60 +90,17 @@ useEffect(() => {
   loadUser();
 }, []);
 
-// Helper: derive current period from timetable
-const getPeriodNow = () => {
-  const t = [
-    { p:1,s:'08:15',e:'09:05' },{ p:2,s:'09:05',e:'09:55' },{ p:3,s:'10:05',e:'10:55' },{ p:4,s:'10:55',e:'11:45' },
-    { p:5,s:'12:45',e:'13:30' },{ p:6,s:'13:30',e:'14:15' },{ p:7,s:'14:25',e:'15:10' },{ p:8,s:'15:10',e:'15:55' }
-  ];
-  const now = new Date(); const m = now.getHours()*60+now.getMinutes();
-  for (const r of t) { const [sh,sm]=r.s.split(':').map(Number); const [eh,em]=r.e.split(':').map(Number); const a=sh*60+sm, b=eh*60+em; if (m>=a && m<=b) return r.p; }
-  return 1;
-};
-
 // Admin-driven pinger (poll control and send pings at configured interval)
 useEffect(() => {
   let ctrlTimer;
   let pingTimer;
-  let stepIndex = 0; // 0:start,1:afterStart15,2:beforeEnd10,3:end
+  let pingCount = 0;
+  let challengeIndex = 1;
   let currentPeriodRef = null;
 
   const types = ['start','afterStart15','beforeEnd10','end'];
 
-  const stopPing = () => { if (pingTimer) { clearInterval(pingTimer); pingTimer = null; } };
-
-  const sendOnePing = async () => {
-    try {
-      if (!user) return;
-      // Get location
-      let loc;
-      try { loc = await Location.getCurrentPositionAsync({}); } catch {
-        if (Platform.OS === 'web' && navigator.geolocation) {
-          loc = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition((p)=>resolve({ coords: { latitude: p.coords.latitude, longitude: p.coords.longitude } }), reject));
-        }
-      }
-      if (!loc) return;
-      const doBiometric = stepIndex === 1; // challenge once per sequence
-      let biometricVerified = false;
-      if (doBiometric) {
-        try { if (typeof LocalAuthentication?.authenticateAsync === 'function') { const r = await LocalAuthentication.authenticateAsync({ promptMessage: 'Verify identity' }); biometricVerified = !!r.success; } }
-        catch {}
-      }
-      const timestampType = types[Math.min(stepIndex, 3)];
-      const periodNumber = currentPeriodRef || getPeriodNow();
-      const resp = await fetch('https://attendancesystem-backend-mias.onrender.com/attendance/mark', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ studentId: user._id, periodNumber, timestampType, location: { latitude: loc.coords.latitude, longitude: loc.coords.longitude }, biometricType: doBiometric ? 'fingerprint' : null, biometricVerified })
-      });
-      // advance step
-      stepIndex = (stepIndex + 1) % 4;
-      if (resp.ok && user?._id) await refreshAttendance(user._id);
-      if (stepIndex === 0) { // completed 4 pings
-        currentPeriodRef = (currentPeriodRef || getPeriodNow()) + 1;
-        if (user?._id) await refreshAttendance(user._id);
-      }
-    } catch {}
-  };
+  const stopPing = () => { if (pingTimer) { clearInterval(pingTimer); pingTimer = null; } pingCount = 0; };
 
   const pollControl = async () => {
     try {
@@ -151,11 +108,55 @@ useEffect(() => {
       const data = await res.json();
       if (!user || !data?.pingEnabled) { stopPing(); return; }
       const intervalMs = Math.max(2000, Number(data.intervalMs) || 60000);
-      if (currentPeriodRef == null) currentPeriodRef = getPeriodNow();
+      // Determine current period based on last attendance date or time
+      const now = new Date();
+      const periodNumber = 1; // simple demo: period 1; can be improved with timetable
+      if (currentPeriodRef !== periodNumber) { currentPeriodRef = periodNumber; pingCount = 0; challengeIndex = Math.ceil(Math.random()*4); }
       if (!pingTimer) {
-        // immediate ping
-        await sendOnePing();
-        pingTimer = setInterval(sendOnePing, intervalMs);
+        pingTimer = setInterval(async () => {
+          try {
+            if (!user) return;
+            if (pingCount >= 4) { stopPing(); return; }
+            // Get location (reuse sendPing flow)
+            let loc;
+            try { loc = await Location.getCurrentPositionAsync({}); } catch {
+              if (Platform.OS === 'web' && navigator.geolocation) {
+                loc = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition((p)=>resolve({ coords: { latitude: p.coords.latitude, longitude: p.coords.longitude } }), reject));
+              }
+            }
+            if (!loc) return;
+            const doBiometric = (pingCount+1) === challengeIndex;
+            let biometricVerified = false;
+            if (doBiometric) {
+              try {
+                // play alarm sound on web
+                if (Platform.OS === 'web' && typeof Audio !== 'undefined') {
+                  const a = new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYBHQAA');
+                  a.play().catch(()=>{});
+                }
+              } catch {}
+              try {
+                if (typeof LocalAuthentication?.authenticateAsync === 'function') {
+                  const res = await LocalAuthentication.authenticateAsync({ promptMessage: 'Verify identity' });
+                  biometricVerified = !!res.success;
+                } else if (Platform.OS === 'web') {
+                  biometricVerified = window.confirm('Biometric challenge: confirm to proceed');
+                }
+              } catch {}
+            }
+            const timestampType = types[Math.min(pingCount, 3)];
+            await fetch('https://attendancesystem-backend-mias.onrender.com/attendance/mark', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                studentId: user._id, periodNumber: periodNumber, timestampType,
+                location: { latitude: loc.coords.latitude, longitude: loc.coords.longitude },
+                biometricType: doBiometric ? 'fingerprint' : null,
+                biometricVerified
+              })
+            });
+            pingCount += 1;
+          } catch {}
+        }, intervalMs);
       }
     } catch {
       stopPing();
@@ -291,13 +292,17 @@ useEffect(() => {
             <Text style={styles.label}>UUID: <Text style={styles.value}>{user.uuid}</Text></Text>
           </View>
 
-          {/* Admin-controlled pings only; manual buttons removed */}
-          {status ? (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Attendance Status</Text>
-              <Text style={styles.status}>{status}</Text>
+          {/* Ping Buttons */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>📍 Ping Attendance</Text>
+            <View style={styles.buttonRow}>
+              <Button title="Start" onPress={() => sendPing(1, 'start')} />
+              <Button title="+5 min" onPress={() => sendPing(1, 'afterStart15')} />
+              <Button title="-5 min" onPress={() => sendPing(1, 'beforeEnd10')} />
+              <Button title="End" onPress={() => sendPing(1, 'end')} />
             </View>
-          ) : null}
+            {status ? <Text style={styles.status}>{status}</Text> : null}
+          </View>
 
           {/* Attendance Summary */}
           <View style={styles.section}>
