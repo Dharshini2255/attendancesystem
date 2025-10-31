@@ -63,16 +63,15 @@ export default function LoginScreen() {
     if (username === 'Adminsystem@123' && password === 'Admin@sdp2255') {
       try { await AsyncStorage.setItem('adminAuth', 'true'); } catch {}
       Alert.alert('✅ Admin Login', 'Welcome, Admin');
+      router.replace('/admin/AdminDashboard');
       if (Platform.OS === 'web') {
         setTimeout(() => {
           try {
-            if (typeof window !== 'undefined') {
-              window.location.assign('/?admin=1#admin');
+            if (typeof window !== 'undefined' && !window.location.pathname.endsWith('/admin/AdminDashboard')) {
+              window.history.pushState({}, '', '/admin/AdminDashboard');
             }
           } catch {}
         }, 50);
-      } else {
-        router.replace('/admin/AdminDashboard');
       }
       return;
     }
