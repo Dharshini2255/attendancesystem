@@ -13,6 +13,8 @@ import {
 } from 'react-native';
 
 const isWeb = Platform.OS === 'web';
+
+// Secure getters/setters with fallback
 const safeSecureGet = async (key) => {
   try {
     if (!isWeb && typeof SecureStore.getItemAsync === 'function') {
@@ -21,6 +23,7 @@ const safeSecureGet = async (key) => {
   } catch {}
   return null;
 };
+
 const safeSecureSet = async (key, value) => {
   try {
     if (!isWeb && typeof SecureStore.setItemAsync === 'function') {
@@ -34,7 +37,7 @@ export default function LoginScreen() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
 
-  // If a user is already stored (web or native), redirect to /home
+  // 🔁 Auto redirect if already logged in
   useEffect(() => {
     (async () => {
       try {
@@ -42,16 +45,21 @@ export default function LoginScreen() {
         if (!storedUser) {
           try { storedUser = await AsyncStorage.getItem('user'); } catch {}
         }
+
         if (storedUser) {
-          router.replace('/home');
+          const parsed = JSON.parse(storedUser);
+          // 👇 Redirect based on role
+          if (parsed.role === 'admin') {
+            router.replace('/admindashboard');
+          } else {
+            router.replace('/home');
+          }
         }
       } catch {}
     })();
   }, []);
 
- const BACKEND_URL = 'https://attendancesystem-backend-mias.onrender.com/login';
-
- // ✅ Replace with your local IP
+  const BACKEND_URL = 'https://attendancesystem-backend-mias.onrender.com/login';
 
   const handleLogin = async () => {
     if (!username || !password) {
@@ -59,16 +67,21 @@ export default function LoginScreen() {
       return;
     }
 
-    // Admin shortcut login (no server call)
+    // 🧠 Admin shortcut login
     if (username === 'Adminsystem@123' && password === 'Admin@sdp2255') {
-      try { await AsyncStorage.setItem('adminAuth', 'true'); } catch {}
+      const adminData = { name: 'Admin', role: 'admin' };
+      try {
+        await safeSecureSet('user', JSON.stringify(adminData));
+        await AsyncStorage.setItem('user', JSON.stringify(adminData));
+      } catch {}
+
       Alert.alert('✅ Admin Login', 'Welcome, Admin');
-      router.replace('/admin');
+      router.replace('/admindashboard');
       if (Platform.OS === 'web') {
         setTimeout(() => {
           try {
-            if (typeof window !== 'undefined' && window.location.pathname !== '/admin') {
-              window.location.assign('/admin');
+            if (typeof window !== 'undefined' && window.location.pathname !== '/admindashboard') {
+              window.location.assign('/admindashboard');
             }
           } catch {}
         }, 50);
@@ -76,6 +89,7 @@ export default function LoginScreen() {
       return;
     }
 
+    // 🧠 Normal user login
     try {
       const response = await fetch(BACKEND_URL, {
         method: 'POST',
@@ -86,11 +100,10 @@ export default function LoginScreen() {
       const data = await response.json();
 
       if (response.ok) {
-        // ✅ Store user info securely (SecureStore) and fallback (AsyncStorage)
+        // ✅ Save user securely
         await safeSecureSet('user', JSON.stringify(data.user));
         try { await AsyncStorage.setItem('user', JSON.stringify(data.user)); } catch {}
 
-        // ✅ Show welcome message and navigate
         Alert.alert('✅ Login Successful', `Welcome ${data.user.name}`);
         router.replace('/home');
         if (Platform.OS === 'web') {
@@ -102,7 +115,6 @@ export default function LoginScreen() {
             } catch {}
           }, 50);
         }
-
       } else {
         Alert.alert('❌ Login Failed', data.error || 'Invalid credentials');
       }
