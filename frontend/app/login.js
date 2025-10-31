@@ -37,25 +37,15 @@ export default function LoginScreen() {
   // If a user is already stored (web or native), redirect to /home
   useEffect(() => {
     (async () => {
-      // if admin flag set, go straight to dashboard
       try {
-        const admin = await AsyncStorage.getItem('adminAuth');
-        if (admin === 'true') {
-          if (Platform.OS === 'web') {
-            window.location.assign('/?admin=1#admin');
-          } else {
-            router.replace('/admin/AdminDashboard');
-          }
-          return;
+        let storedUser = await safeSecureGet('user');
+        if (!storedUser) {
+          try { storedUser = await AsyncStorage.getItem('user'); } catch {}
+        }
+        if (storedUser) {
+          router.replace('/home');
         }
       } catch {}
-      let storedUser = await safeSecureGet('user');
-      if (!storedUser) {
-        try { storedUser = await AsyncStorage.getItem('user'); } catch {}
-      }
-      if (storedUser) {
-        router.replace('/home');
-      }
     })();
   }, []);
 
