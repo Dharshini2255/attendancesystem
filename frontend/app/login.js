@@ -50,7 +50,7 @@ export default function LoginScreen() {
           const parsed = JSON.parse(storedUser);
           // 👇 Redirect based on role
           if (parsed.role === 'admin') {
-            router.replace('/admindashboard');
+            router.replace('/admin');
           } else {
             router.replace('/home');
           }
@@ -76,12 +76,12 @@ export default function LoginScreen() {
       } catch {}
 
       Alert.alert('✅ Admin Login', 'Welcome, Admin');
-      router.replace('/admindashboard');
+      router.replace('/admin');
       if (Platform.OS === 'web') {
         setTimeout(() => {
           try {
-            if (typeof window !== 'undefined' && window.location.pathname !== '/admindashboard') {
-              window.location.assign('/admindashboard');
+            if (typeof window !== 'undefined' && window.location.pathname !== '/admin') {
+              window.history.pushState({}, '', '/admin');
             }
           } catch {}
         }, 50);
