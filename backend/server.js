@@ -40,6 +40,8 @@ const attendanceSchema = new mongoose.Schema({
   studentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Student' },
   studentName: String,
   regNo: String,
+  class: String,
+  year: Number,
   date: String,
   periods: [
     {
@@ -208,14 +210,20 @@ app.post('/attendance/mark', async (req, res) => {
     const student = await Student.findById(studentId);
     if (!student) return res.status(404).json({ error: "Student not found" });
 
-    const collegeLocation = { latitude: 12.8005328, longitude: 80.0388091 };
+    // choose reference location based on admin settings
+    const settings = await AdminSettings.findOne({ key: 'global' }).lean();
+    const collegeDefault = { latitude: 12.8005328, longitude: 80.0388091 };
+    const target = settings?.locationMode === 'staff' && settings?.staffLocation?.latitude
+      ? settings.staffLocation
+      : (settings?.collegeLocation?.latitude ? settings.collegeLocation : collegeDefault);
+
     const MAX_RADIUS_METERS = parseInt(process.env.MAX_RADIUS_METERS || '50000', 10); // widen for testing; set to 100 in prod
 
     const toRad = (value) => (value * Math.PI) / 180;
     const R = 6371000;
-    const dLat = toRad(location.latitude - collegeLocation.latitude);
-    const dLon = toRad(location.longitude - collegeLocation.longitude);
-    const lat1 = toRad(collegeLocation.latitude);
+    const dLat = toRad(location.latitude - target.latitude);
+    const dLon = toRad(location.longitude - target.longitude);
+    const lat1 = toRad(target.latitude);
     const lat2 = toRad(location.latitude);
 
     const a =
@@ -255,9 +263,9 @@ app.post('/attendance/mark', async (req, res) => {
     });
 
     const validPings = allPings.filter(p => {
-      const dLat = toRad(p.location.latitude - collegeLocation.latitude);
-      const dLon = toRad(p.location.longitude - collegeLocation.longitude);
-      const lat1 = toRad(collegeLocation.latitude);
+      const dLat = toRad(p.location.latitude - target.latitude);
+      const dLon = toRad(p.location.longitude - target.longitude);
+      const lat1 = toRad(target.latitude);
       const lat2 = toRad(p.location.latitude);
       const a =
         Math.sin(dLat / 2) ** 2 +
@@ -281,6 +289,8 @@ app.post('/attendance/mark', async (req, res) => {
           studentId,
           studentName: student.name,
           regNo: student.regNo,
+          class: student.class,
+          year: student.year,
           date: todayLocal,
           periods: []
         });
@@ -359,6 +369,22 @@ const adminControlSchema = new mongoose.Schema({
 });
 const AdminControl = mongoose.model('AdminControl', adminControlSchema);
 
+// Admin settings (schedule, scope, locations)
+const adminSettingsSchema = new mongoose.Schema({
+  key: { type: String, unique: true },
+  date: String, // YYYY-MM-DD
+  day: String,
+  startTime: String, // HH:mm
+  endTime: String,   // HH:mm
+  classes: [String],
+  sections: [String],
+  years: [Number],
+  locationMode: { type: String, enum: ['college','staff'], default: 'college' },
+  collegeLocation: { latitude: Number, longitude: Number },
+  staffLocation: { latitude: Number, longitude: Number }
+});
+const AdminSettings = mongoose.model('AdminSettings', adminSettingsSchema);
+
 // ------------------- Admin APIs (no auth in demo) -------------------
 // Ping control
 app.get('/admin/ping-control', async (_req, res) => {
@@ -383,6 +409,32 @@ app.post('/admin/ping-control', async (req, res) => {
     res.json({ ok: true, pingEnabled: ctrl.pingEnabled, intervalMs: ctrl.intervalMs });
   } catch (err) {
     console.error('Ping control set error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Admin settings endpoints
+app.get('/admin/settings', async (_req, res) => {
+  try {
+    let s = await AdminSettings.findOne({ key: 'global' }).lean();
+    if (!s) s = { date: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }), day: '', startTime: '09:00', endTime: '17:00', classes: [], sections: [], years: [], locationMode: 'college', collegeLocation: { latitude: 12.8005328, longitude: 80.0388091 } };
+    res.json(s);
+  } catch (err) {
+    console.error('Admin settings get error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/admin/settings', async (req, res) => {
+  try {
+    const body = req.body || {};
+    let s = await AdminSettings.findOne({ key: 'global' });
+    if (!s) s = new AdminSettings({ key: 'global' });
+    Object.assign(s, body);
+    await s.save();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Admin settings post error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -427,6 +479,62 @@ app.get('/admin/attendance/detail', async (req, res) => {
     res.json({ date: theDate, studentId, periods });
   } catch (err) {
     console.error('Admin attendance detail error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Student history (attendance + pings)
+app.get('/admin/student/:id/history', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { from, to } = req.query;
+    const f = from || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    const t = to || f;
+    const start = new Date(`${f}T00:00:00+05:30`);
+    const end = new Date(`${t}T23:59:59+05:30`);
+
+    const pings = await Ping.find({ studentId: id, timestamp: { $gte: start, $lte: end } }).sort({ timestamp: 1 }).lean();
+    const records = await Attendance.find({ studentId: id, date: { $gte: f, $lte: t } }).lean();
+    res.json({ pings, records });
+  } catch (err) {
+    console.error('Admin student history error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Notifications (basic: no recent ping)
+app.get('/admin/notifications', async (_req, res) => {
+  try {
+    const ctrl = await AdminControl.findOne({ key: 'global' }).lean();
+    const settings = await AdminSettings.findOne({ key: 'global' }).lean();
+    const intervalMs = ctrl?.intervalMs || 60000;
+
+    const now = new Date();
+    // within window? if start/end set
+    const withinWindow = (() => {
+      if (!settings?.startTime || !settings?.endTime) return true;
+      const [sh, sm] = settings.startTime.split(':').map(Number);
+      const [eh, em] = settings.endTime.split(':').map(Number);
+      const m = now.getHours()*60 + now.getMinutes();
+      const a = sh*60+sm, b = eh*60+em;
+      return m >= a && m <= b;
+    })();
+
+    const alerts = [];
+    if (ctrl?.pingEnabled && withinWindow) {
+      const since = new Date(now.getTime() - intervalMs * 2);
+      const students = await Student.find({}).select('name regNo username').lean();
+      for (const s of students) {
+        const last = await Ping.findOne({ studentId: s._id, timestamp: { $gte: since } }).sort({ timestamp: -1 }).lean();
+        if (!last) {
+          alerts.push({ type: 'noPing', studentId: String(s._id), studentName: s.name, regNo: s.regNo, message: 'No recent ping (location off or not in app).', at: now });
+        }
+      }
+    }
+
+    res.json({ alerts });
+  } catch (err) {
+    console.error('Admin notifications error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -597,6 +705,30 @@ app.get('/admin/pings', async (req, res) => {
   }
 });
 
+// Attendance summaries
+app.get('/admin/attendance/summary', async (req, res) => {
+  try {
+    const { from, to, by = 'class' } = req.query;
+    const f = from || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    const t = to || f;
+    const records = await Attendance.find({ date: { $gte: f, $lte: t } }).lean();
+    const buckets = {};
+    for (const r of records) {
+      const key = by === 'year' ? r.year : r.class;
+      if (!buckets[key]) buckets[key] = { key, present: 0, absent: 0, students: new Set() };
+      for (const p of r.periods || []) {
+        if (p.status === 'present') buckets[key].present += 1; else buckets[key].absent += 1;
+      }
+      buckets[key].students.add(String(r.studentId));
+    }
+    const rows = Object.values(buckets).map(b => ({ key: b.key, present: b.present, absent: b.absent, uniqueStudents: b.students.size }));
+    res.json({ rows });
+  } catch (err) {
+    console.error('Attendance summary error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // CSV exports
 const toCsv = (rows, headers) => {
   const esc = (v) => (v == null ? '' : String(v).replace(/"/g, '""'));
@@ -677,6 +809,47 @@ app.get('/admin/export/attendance.csv', async (req, res) => {
     console.error('Export attendance error:', err);
     res.status(500).json({ error: 'Server error' });
   }
+});
+
+// Server-Sent Events for notifications
+app.get('/admin/notifications/stream', async (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+
+  const send = async () => {
+    try {
+      const ctrl = await AdminControl.findOne({ key: 'global' }).lean();
+      const settings = await AdminSettings.findOne({ key: 'global' }).lean();
+      const intervalMs = ctrl?.intervalMs || 60000;
+      const now = new Date();
+      const withinWindow = (() => {
+        if (!settings?.startTime || !settings?.endTime) return true;
+        const [sh, sm] = settings.startTime.split(':').map(Number);
+        const [eh, em] = settings.endTime.split(':').map(Number);
+        const m = now.getHours()*60 + now.getMinutes();
+        const a = sh*60+sm, b = eh*60+em;
+        return m >= a && m <= b;
+      })();
+      const alerts = [];
+      if (ctrl?.pingEnabled && withinWindow) {
+        const since = new Date(now.getTime() - intervalMs * 2);
+        const students = await Student.find({}).select('name regNo username').lean();
+        for (const s of students) {
+          const last = await Ping.findOne({ studentId: s._id, timestamp: { $gte: since } }).sort({ timestamp: -1 }).lean();
+          if (!last) alerts.push({ type: 'noPing', studentId: String(s._id), studentName: s.name, regNo: s.regNo, message: 'No recent ping', at: now });
+        }
+      }
+      res.write(`data: ${JSON.stringify({ alerts })}\n\n`);
+    } catch (e) {
+      res.write(`data: ${JSON.stringify({ alerts: [], error: true })}\n\n`);
+    }
+  };
+
+  const iv = setInterval(send, 8000);
+  send();
+  req.on('close', () => clearInterval(iv));
 });
 
 // ------------------- Server Startup -------------------

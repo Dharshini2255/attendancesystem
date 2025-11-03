@@ -6,7 +6,7 @@ import { Alert, Button, ScrollView, StyleSheet, Text, View, TouchableOpacity } f
 export default function AdminDashboard() {
   const router = useRouter();
   const [authorized, setAuthorized] = useState(false);
-  const [tab, setTab] = useState('users'); // users | attendance | pings
+  const [tab, setTab] = useState('dashboard'); // dashboard | attendance | settings | notifications
 
   const [users, setUsers] = useState([]);
   const [attRows, setAttRows] = useState([]);
@@ -19,6 +19,8 @@ export default function AdminDashboard() {
   const [granularity, setGranularity] = useState('day');
   const [query, setQuery] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  const [settings, setSettings] = useState({ date: new Date().toLocaleDateString('en-CA'), day: '', startTime: '09:00', endTime: '17:00', classes: [], sections: [], years: [], locationMode: 'college', collegeLocation: { latitude: 12.8005328, longitude: 80.0388091 }, staffLocation: { latitude: 0, longitude: 0 } });
+  const [notifications, setNotifications] = useState([]);
 
   useEffect(() => {
     (async () => {
@@ -99,6 +101,18 @@ export default function AdminDashboard() {
     } catch {}
   };
 
+  const readSettings = async () => {
+    try { const res = await fetch(`${api}/admin/settings`); const data = await res.json(); setSettings(prev => ({ ...prev, ...data })); } catch {}
+  };
+
+  const saveSettings = async () => {
+    try { await fetch(`${api}/admin/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) }); alert('Settings saved'); } catch {}
+  };
+
+  const loadNotifications = async () => {
+    try { const res = await fetch(`${api}/admin/notifications`); const data = await res.json(); setNotifications(data.alerts || []); } catch {}
+  };
+
   const exportUsers = () => { 
     const url = new URL(`${api}/admin/export/users.csv`);
     if (query) url.searchParams.set('q', query);
@@ -127,18 +141,58 @@ export default function AdminDashboard() {
       <View style={styles.headerBar}>
         <Text style={styles.title}>Admin Dashboard</Text>
         <View style={styles.buttonGroup}>
-          <ActionButton title="Users" color="#3b82f6" onPress={() => { setTab('users'); }} />
+          <ActionButton title="Dashboard" color="#3b82f6" onPress={() => { setTab('dashboard'); loadUsers(); loadSessions(); }} />
           <ActionButton title="Attendance" color="#8b5cf6" onPress={() => { setTab('attendance'); loadAttendance(); }} />
-          <ActionButton title="Pings/Location" color="#10b981" onPress={() => { setTab('pings'); loadPings(); }} />
-          <ActionButton title="Account State" color="#0ea5e9" onPress={() => { setTab('sessions'); loadSessions(); }} />
+          <ActionButton title="Settings" color="#10b981" onPress={() => { setTab('settings'); readSettings(); }} />
+          <ActionButton title="Notifications" color="#f59e0b" onPress={() => { setTab('notifications'); loadNotifications(); }} />
           <ActionButton title="Filters" color="#64748b" onPress={() => setShowFilters(true)} />
-          <ActionButton title="Exit Admin" color="#ef4444" onPress={async () => { await AsyncStorage.removeItem('adminAuth'); router.replace('/home'); }} />
+          <ActionButton title="Logout" color="#ef4444" onPress={async () => { await AsyncStorage.removeItem('adminAuth'); router.replace('/home'); }} />
         </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
 
-      {tab === 'users' && (
+      {tab === 'dashboard' && (
+        <View style={{ width: '100%' }}>
+          <Text style={styles.textDark}>Overview</Text>
+          <View style={{ flexDirection: 'row', gap: 12, flexWrap: 'wrap', marginVertical: 8 }}>
+            <View style={{ backgroundColor: '#e2e8f0', padding: 12, borderRadius: 8 }}>
+              <Text style={styles.textDark}>Users: {users.length}</Text>
+            </View>
+            <View style={{ backgroundColor: '#e2e8f0', padding: 12, borderRadius: 8 }}>
+              <Text style={styles.textDark}>Logged In: {sessions.loggedIn?.length || 0}</Text>
+            </View>
+            <View style={{ backgroundColor: '#e2e8f0', padding: 12, borderRadius: 8 }}>
+              <Text style={styles.textDark}>Alerts: {notifications.length}</Text>
+            </View>
+          </View>
+          <Text style={[styles.th, { marginTop: 12 }]}>Recent Pings</Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <ActionButton title="By Class" color="#0ea5e9" onPress={async()=>{ const url = new URL(`${api}/admin/attendance/summary`); url.searchParams.set('from', from); url.searchParams.set('to', to); url.searchParams.set('by','class'); const r = await fetch(url); const d = await r.json(); alert('Class summary\n'+JSON.stringify(d.rows,null,2)); }} />
+              <ActionButton title="By Year" color="#0ea5e9" onPress={async()=>{ const url = new URL(`${api}/admin/attendance/summary`); url.searchParams.set('from', from); url.searchParams.set('to', to); url.searchParams.set('by','year'); const r = await fetch(url); const d = await r.json(); alert('Year summary\n'+JSON.stringify(d.rows,null,2)); }} />
+            </View>
+          </View>
+          <View style={styles.table}>
+            <View style={styles.tableHeader}>
+              <Text style={[styles.th, { flex: 2 }]}>Time</Text>
+              <Text style={[styles.th, { flex: 2 }]}>Name</Text>
+              <Text style={[styles.th, { flex: 2 }]}>Reg No</Text>
+              <Text style={[styles.th, { flex: 2 }]}>Type</Text>
+            </View>
+            {pings.slice(0,10).map((p,i)=>(
+              <View key={i} style={styles.tableRow}>
+                <Text style={[styles.td,{flex:2}]}>{new Date(p.timestamp).toLocaleString()}</Text>
+                <Text style={[styles.td,{flex:2}]}>{p.studentName}</Text>
+                <Text style={[styles.td,{flex:2}]}>{p.regNo}</Text>
+                <Text style={[styles.td,{flex:2}]}>{p.periodNumber} {p.timestampType}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {tab === 'attendance' && (
         <View style={{ width: '100%' }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
             <Text style={styles.textDark}>Users: {users.length}</Text>
@@ -187,13 +241,13 @@ export default function AdminDashboard() {
                 <Text style={[styles.td, { flex: 1.5 }]}>{r.date || r.bucket}</Text>
               <TouchableOpacity style={{ flex: 2 }} onPress={async () => {
                 try {
-                  const params = new URLSearchParams({ studentId: r.studentId, date: r.date || new Date().toISOString().slice(0,10) });
-                  const res = await fetch(`${api}/admin/attendance/detail?${params}`);
+                  const params = new URLSearchParams({ from: from, to: to });
+                  const res = await fetch(`${api}/admin/student/${encodeURIComponent(r.studentId)}/history?${params}`);
                   const detail = await res.json();
                   alert(JSON.stringify(detail, null, 2));
                 } catch {}
               }}>
-                <Text style={[styles.td]}>{r.studentName}</Text>
+                <Text style={[styles.td, { color:'#2563eb', textDecorationLine:'underline' }]}>{r.studentName}</Text>
               </TouchableOpacity>
                 <Text style={[styles.td, { flex: 1.5 }]}>{r.regNo}</Text>
                 {r.periodNumber != null ? (
@@ -207,26 +261,52 @@ export default function AdminDashboard() {
         </View>
       )}
 
-      {tab === 'pings' && (
+      {tab === 'settings' && (
         <View style={{ width: '100%' }}>
-          <Text style={styles.textDark}>Pings: {pings.length}</Text>
+          <Text style={styles.textDark}>Attendance Settings</Text>
+          <View style={{ gap: 8, marginBottom: 12 }}>
+            <Text>Date</Text>
+            <input type="date" value={settings.date||''} onChange={e=>setSettings({ ...settings, date: e.target.value })} style={styles.textInput} />
+            <Text>Day</Text>
+            <input value={settings.day||''} onChange={e=>setSettings({ ...settings, day: e.target.value })} style={styles.textInput} />
+            <Text>Start Time</Text>
+            <input type="time" value={settings.startTime||''} onChange={e=>setSettings({ ...settings, startTime: e.target.value })} style={styles.textInput} />
+            <Text>End Time</Text>
+            <input type="time" value={settings.endTime||''} onChange={e=>setSettings({ ...settings, endTime: e.target.value })} style={styles.textInput} />
+            <Text>Classes (comma-separated)</Text>
+            <input value={(settings.classes||[]).join(',')} onChange={e=>setSettings({ ...settings, classes: e.target.value.split(',').map(s=>s.trim()).filter(Boolean) })} style={styles.textInput} />
+            <Text>Sections (comma-separated)</Text>
+            <input value={(settings.sections||[]).join(',')} onChange={e=>setSettings({ ...settings, sections: e.target.value.split(',').map(s=>s.trim()).filter(Boolean) })} style={styles.textInput} />
+            <Text>Years (comma-separated)</Text>
+            <input value={(settings.years||[]).join(',')} onChange={e=>setSettings({ ...settings, years: e.target.value.split(',').map(s=>Number(s.trim())).filter(n=>!isNaN(n)) })} style={styles.textInput} />
+            <Text>Location Mode</Text>
+            <select value={settings.locationMode} onChange={e=>setSettings({ ...settings, locationMode: e.target.value })} style={styles.select}>
+              <option value="college">College</option>
+              <option value="staff">Staff</option>
+            </select>
+            <Text>College Location (lat,lon)</Text>
+            <input value={`${settings.collegeLocation?.latitude||''},${settings.collegeLocation?.longitude||''}`} onChange={e=>{ const [lat,lon]=e.target.value.split(','); setSettings({ ...settings, collegeLocation: { latitude: Number(lat), longitude: Number(lon) } }); }} style={styles.textInput} />
+            <Text>Staff Location (lat,lon)</Text>
+            <input value={`${settings.staffLocation?.latitude||''},${settings.staffLocation?.longitude||''}`} onChange={e=>{ const [lat,lon]=e.target.value.split(','); setSettings({ ...settings, staffLocation: { latitude: Number(lat), longitude: Number(lon) } }); }} style={styles.textInput} />
+            <ActionButton title="Save Settings" color="#3b82f6" onPress={saveSettings} />
+          </View>
+        </View>
+      )}
+
+      {tab === 'notifications' && (
+        <View style={{ width: '100%' }}>
+          <Text style={styles.textDark}>Notifications</Text>
           <View style={styles.table}>
             <View style={styles.tableHeader}>
-              <Text style={[styles.th, { flex: 2 }]}>Time</Text>
-              <Text style={[styles.th, { flex: 1.5 }]}>Name</Text>
-              <Text style={[styles.th, { flex: 1.5 }]}>Reg No</Text>
-              <Text style={[styles.th, { flex: 1.5 }]}>Period/Type</Text>
-              <Text style={[styles.th, { flex: 1 }]}>Location</Text>
+              <Text style={[styles.th,{flex:2}]}>Time</Text>
+              <Text style={[styles.th,{flex:2}]}>Student</Text>
+              <Text style={[styles.th,{flex:3}]}>Message</Text>
             </View>
-            {pings.map((p, i) => (
+            {notifications.map((n,i)=>(
               <View key={i} style={styles.tableRow}>
-                <Text style={[styles.td, { flex: 2 }]}>{new Date(p.timestamp).toLocaleString()}</Text>
-                <Text style={[styles.td, { flex: 1.5 }]}>{p.studentName || ''}</Text>
-                <Text style={[styles.td, { flex: 1.5 }]}>{p.regNo || ''}</Text>
-                <Text style={[styles.td, { flex: 1.5 }]}>{p.periodNumber || ''} {p.timestampType || ''}</Text>
-                <TouchableOpacity style={{ flex: 1 }} onPress={() => window.open(`https://maps.google.com/?q=${p.location?.latitude},${p.location?.longitude}`, '_blank')}>
-                  <Text style={[styles.td, { color: '#3b82f6', textDecorationLine: 'underline' }]}>View Map</Text>
-                </TouchableOpacity>
+                <Text style={[styles.td,{flex:2}]}>{new Date(n.at||Date.now()).toLocaleString()}</Text>
+                <Text style={[styles.td,{flex:2}]}>{n.studentName} ({n.regNo})</Text>
+                <Text style={[styles.td,{flex:3}]}>{n.message}</Text>
               </View>
             ))}
           </View>
