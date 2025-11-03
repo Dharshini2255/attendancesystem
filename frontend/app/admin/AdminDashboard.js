@@ -167,12 +167,6 @@ export default function AdminDashboard() {
             </View>
           </View>
           <Text style={[styles.th, { marginTop: 12 }]}>Recent Pings</Text>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              <ActionButton title="By Class" color="#0ea5e9" onPress={async()=>{ const url = new URL(`${api}/admin/attendance/summary`); url.searchParams.set('from', from); url.searchParams.set('to', to); url.searchParams.set('by','class'); const r = await fetch(url); const d = await r.json(); alert('Class summary\n'+JSON.stringify(d.rows,null,2)); }} />
-              <ActionButton title="By Year" color="#0ea5e9" onPress={async()=>{ const url = new URL(`${api}/admin/attendance/summary`); url.searchParams.set('from', from); url.searchParams.set('to', to); url.searchParams.set('by','year'); const r = await fetch(url); const d = await r.json(); alert('Year summary\n'+JSON.stringify(d.rows,null,2)); }} />
-            </View>
-          </View>
           <View style={styles.table}>
             <View style={styles.tableHeader}>
               <Text style={[styles.th, { flex: 2 }]}>Time</Text>
@@ -312,6 +306,30 @@ export default function AdminDashboard() {
           </View>
         </View>
       )}
+        <View style={{ width: '100%' }}>
+          <Text style={styles.textDark}>Pings: {pings.length}</Text>
+          <View style={styles.table}>
+            <View style={styles.tableHeader}>
+              <Text style={[styles.th, { flex: 2 }]}>Time</Text>
+              <Text style={[styles.th, { flex: 1.5 }]}>Name</Text>
+              <Text style={[styles.th, { flex: 1.5 }]}>Reg No</Text>
+              <Text style={[styles.th, { flex: 1.5 }]}>Period/Type</Text>
+              <Text style={[styles.th, { flex: 1 }]}>Location</Text>
+            </View>
+            {pings.map((p, i) => (
+              <View key={i} style={styles.tableRow}>
+                <Text style={[styles.td, { flex: 2 }]}>{new Date(p.timestamp).toLocaleString()}</Text>
+                <Text style={[styles.td, { flex: 1.5 }]}>{p.studentName || ''}</Text>
+                <Text style={[styles.td, { flex: 1.5 }]}>{p.regNo || ''}</Text>
+                <Text style={[styles.td, { flex: 1.5 }]}>{p.periodNumber || ''} {p.timestampType || ''}</Text>
+                <TouchableOpacity style={{ flex: 1 }} onPress={() => window.open(`https://maps.google.com/?q=${p.location?.latitude},${p.location?.longitude}`, '_blank')}>
+                  <Text style={[styles.td, { color: '#3b82f6', textDecorationLine: 'underline' }]}>View Map</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        </View>
+    
 
       {tab === 'sessions' && (
         <View style={{ width: '100%' }}>
