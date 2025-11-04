@@ -637,9 +637,9 @@ const styles = StyleSheet.create({
   fill: { flex: 1 },
   bg: Platform.select({
     web: {
-      backgroundImage: 'linear-gradient(135deg, #c239e4ff 0%, #cd52d5ff 50%, #c82fdfff 100%)',
+      backgroundImage: 'linear-gradient(135deg, #faf8fbff 0%, #fcfbfcff 50%, #fefefeff 100%)',
     },
-    default: { backgroundColor: '#a028b8ff' },
+    default: { backgroundColor: '#ffffffff' },
   }),
 
   topBar: {
@@ -649,13 +649,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  brand: { fontSize: 20, fontWeight: '800', color: '#ffffffff' },
+  brand: { fontSize: 20, fontWeight: '800', color: '#010101ff' },
   navRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 18, flexWrap: 'wrap' },
   navTab: { alignItems: 'center' },
-  navTabText: { color: '#fdfbffff', fontWeight: '800', fontSize: 14 },
-  navTabTextActive: { color: '#926dadff' },
+  navTabText: { color: '#000000ff', fontWeight: '800', fontSize: 14 },
+  navTabTextActive: { color: '#000000ff' },
   navUnderline: { height: 2, width: '100%', backgroundColor: 'transparent', marginTop: 4, borderRadius: 9999 },
-  navUnderlineActive: { backgroundColor: '#9757a0ff' },
+  navUnderlineActive: { backgroundColor: '#000000ff' },
   logout: { flexDirection:'row', alignItems:'center', gap:6, paddingVertical:4, paddingHorizontal:6, borderRadius:6 },
 
   page: { flexGrow: 1, padding: 16, gap: 16 },
@@ -668,20 +668,20 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: 16,
     padding: 16,
-    backgroundColor: 'rgba(136, 80, 150, 0.75)',
+    backgroundColor: 'rgba(104, 100, 100, 0.75)',
     ...Platform.select({ web: { boxShadow: '0 12px 30px rgba(91, 33, 182, 0.08)', border: '1px solid #eadcff' }, default: {} }),
   },
   contentBox: { padding: 12 },
 
-  panelTitle: { fontSize: 16, fontWeight: '800', color: '#0f172a', marginBottom: 10 },
-  muted: { color: '#475569' },
+  panelTitle: { fontSize: 16, fontWeight: '800', color: '#000000ff', marginBottom: 10 },
+  muted: { color: '#526581ff' },
   value: { color: '#0f172a', fontWeight: '700' },
   rowBetween: { flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginTop: 4 },
   primaryBtn: { marginTop: 12, backgroundColor: '#60a5fa', paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
   primaryBtnText: { color: '#0f172a', fontWeight: '800' },
   secondaryBtn: { backgroundColor: 'rgba(96,165,250,0.15)', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 8, marginTop: 6 },
-  secondaryBtnText: { color: '#1e40af', fontWeight: '700' },
-  link: { color: '#2563eb', fontWeight: '700', textDecorationLine: 'underline' },
+  secondaryBtnText: { color: '#000000ff', fontWeight: '700' },
+  link: { color: '#000000ff', fontWeight: '700', textDecorationLine: 'underline' },
 
   mapWrap: { height: 200, borderRadius: 12, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.6)' },
   legendRow: { flexDirection:'row', alignItems:'center', gap:8, marginTop: 8, flexWrap:'wrap' },
@@ -690,7 +690,7 @@ const styles = StyleSheet.create({
 
   metricsRow: { flexDirection:'row', gap: 10, flexWrap:'wrap', marginBottom: 10 },
   metricChip: { paddingVertical:8, paddingHorizontal:12, backgroundColor:'rgba(255,255,255,0.7)', borderRadius: 9999 },
-  metricNum: { fontWeight:'800', color:'#0f172a' },
+  metricNum: { fontWeight:'800', color:'#6c6d6fff' },
   metricLabel: { color:'#475569' },
 
   noticeItem: { padding: 10, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.7)' },
@@ -709,8 +709,8 @@ const styles = StyleSheet.create({
   segmentActive: { backgroundColor:'rgba(255,255,255,0.9)' },
   segmentLabel: { color:'#0f172a', fontWeight:'700' },
 
-  input: { padding: 10, backgroundColor:'rgba(255,255,255,0.8)', borderRadius: 10, color:'#0f172a' },
-  webInput: { padding: 10, background: 'rgba(255,255,255,0.8)', borderRadius: 10, border: '1px solid rgba(148,163,184,0.35)' },
+  input: { padding: 10, backgroundColor:'rgba(255, 255, 255, 1), 0.8)', borderRadius: 10, color:'#0f172a' },
+  webInput: { padding: 10, background: 'rgba(0, 0, 0, 0.8)', borderRadius: 10, border: '1px solid rgba(148,163,184,0.35)' },
 
   // Table styles
   table: { width:'100%', borderRadius: 12, overflow:'hidden', ...Platform.select({ web: { border: '1px solid rgba(148,163,184,0.35)' }, default: {} }) },
