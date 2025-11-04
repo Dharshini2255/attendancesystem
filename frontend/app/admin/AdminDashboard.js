@@ -182,8 +182,8 @@ export default function AdminDashboard() {
     return <View style={[styles.fill, styles.bg]}><Text style={{ color: '#1f2937' }}>Checking admin access…</Text></View>;
   }
 
-  const NavItem = ({ active, label, onPress }) => (
-    <TouchableOpacity onPress={onPress} style={styles.navTab}>
+  const NavItem = ({ active, label, onPress, big=false }) => (
+    <TouchableOpacity onPress={onPress} style={[styles.navTab, big && styles.navTabBig]}>
       <Text style={[styles.navTabText, active && styles.navTabTextActive]}>{label}</Text>
       <View style={[styles.navUnderline, active && styles.navUnderlineActive]} />
     </TouchableOpacity>
@@ -209,13 +209,13 @@ export default function AdminDashboard() {
       {/* Top nav */}
       <View style={styles.topBar}>
         <Text style={styles.brand}>Admin Dashboard</Text>
-        <View style={styles.navRow}>
-          <NavItem active={tab==='dashboard'} label="Dashboard" onPress={() => { setTab('dashboard'); loadPings(); loadNotifications(); }} />
+        <View style={[styles.navRow, isSmall && styles.navRowSmall]}>
+          <NavItem big={isSmall} active={tab==='dashboard'} label="Dashboard" onPress={() => { setTab('dashboard'); loadPings(); loadNotifications(); }} />
           <NavItem active={tab==='settings'} label="Settings" onPress={() => { setTab('settings'); readSettings(); }} />
           <NavItem active={tab==='attendance'} label="Attendance" onPress={() => { setTab('attendance'); loadAttendance(); }} />
           <NavItem active={tab==='notifications'} label="Notifications" onPress={() => { setTab('notifications'); loadNotifications(); }} />
           <TouchableOpacity onPress={async () => { await AsyncStorage.removeItem('adminAuth'); router.replace('/home'); }} style={styles.logout}>
-            <Ionicons name="log-out-outline" size={18} color="#5b21b6" />
+            <Ionicons name="log-out-outline" size={18} color="#0f766e" />
             <Text style={styles.navTabText}>Logout</Text>
           </TouchableOpacity>
         </View>
@@ -328,6 +328,49 @@ export default function AdminDashboard() {
 
         {tab === 'attendance' && (
           <View style={{ width: '100%', gap: 16 }}>
+            {/* Inline filters for Attendance */}
+            <Panel>
+              <View style={{ gap: 8 }}>
+                <View style={styles.segmentRow}>
+                  {Platform.OS==='web' ? (
+                    <input
+                      value={query}
+                      onChange={e=>setQuery(e.target.value)}
+                      placeholder="Search by name/reg no/username"
+                      style={styles.webInput}
+                    />
+                  ) : (
+                    <TextInput value={query} onChangeText={setQuery} placeholder="Search" style={styles.input} />
+                  )}
+                  {Platform.OS==='web' ? (
+                    <select value={granularity} onChange={e=>setGranularity(e.target.value)} style={styles.webInput}>
+                      <option value="day">Day</option>
+                      <option value="week">Week</option>
+                      <option value="month">Month</option>
+                      <option value="year">Year</option>
+                    </select>
+                  ) : (
+                    <TextInput value={granularity} onChangeText={setGranularity} placeholder="day/week/month" style={styles.input} />
+                  )}
+                </View>
+                <View style={styles.segmentRow}>
+                  {Platform.OS==='web' ? (
+                    <input type="date" value={from} onChange={e=>setFrom(e.target.value)} style={styles.webInput} />
+                  ) : (
+                    <TextInput value={from} onChangeText={setFrom} placeholder="From (YYYY-MM-DD)" style={styles.input} />
+                  )}
+                  {Platform.OS==='web' ? (
+                    <input type="date" value={to} onChange={e=>setTo(e.target.value)} style={styles.webInput} />
+                  ) : (
+                    <TextInput value={to} onChangeText={setTo} placeholder="To (YYYY-MM-DD)" style={styles.input} />
+                  )}
+                  <TouchableOpacity onPress={()=>{ if (attendanceView==='attendance') loadAttendance(); else loadUsers(); }} style={styles.primaryBtn}>
+                    <Text style={styles.primaryBtnText}>Apply</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </Panel>
+
             <View style={styles.segmentRow}>
               <TouchableOpacity onPress={()=>setAttendanceView('users')} style={[styles.segmentBtn, attendanceView==='users' && styles.segmentActive]}>
                 <Text style={styles.segmentLabel}>Users</Text>
@@ -424,7 +467,6 @@ export default function AdminDashboard() {
                     </TouchableOpacity>
                   ))}
                 </View>
-
                 <Text style={styles.muted}>Department</Text>
                 {Platform.OS==='web' ? (
                   <select value={settings.department||''} onChange={e=>setSettings({ ...settings, department: e.target.value })} style={styles.webInput}>
@@ -452,52 +494,16 @@ export default function AdminDashboard() {
                   <TextInput value={String(settings.year||'')} onChangeText={t=>setSettings({...settings, year: Number(t||0)})} style={styles.input} placeholder="1-4" />
                 )}
 
-                <Text style={styles.muted}>Location Mode</Text>
-                <View style={styles.segmentRow}>
-                  {['college','staff','user'].map(mode => (
-                    <TouchableOpacity key={mode} onPress={()=>setSettings({...settings, locationMode: mode})} style={[styles.segmentBtn, settings.locationMode===mode && styles.segmentActive]}>
-                      <Text style={styles.segmentLabel}>{mode==='college' ? 'College' : mode==='staff' ? 'Staff Anchor' : 'User Proximity'}</Text>
+                <Text style={styles.muted}>Location Options</Text>
+                <View style={{ gap: 8 }}>
+                  <View style={styles.rowBetween}>
+                    <Text style={styles.muted}>Use College Location</Text>
+                    <TouchableOpacity onPress={()=>setSettings({ ...settings, useCollegeLocation: !settings.useCollegeLocation })} style={[styles.segmentBtn, settings.useCollegeLocation && styles.segmentActive]}>
+                      <Text style={styles.segmentLabel}>{settings.useCollegeLocation ? 'On' : 'Off'}</Text>
                     </TouchableOpacity>
-                  ))}
-                </View>
-
-                {settings.locationMode==='staff' && (
-                  <View style={{ gap: 8 }}>
-                    <Text style={styles.muted}>Staff Anchor Location (lat,lon)</Text>
-                    {Platform.OS==='web' ? (
-                      <input value={`${settings.staffLocation?.latitude||''},${settings.staffLocation?.longitude||''}`} onChange={e=>{ const [lat,lon]=e.target.value.split(','); setSettings({ ...settings, staffLocation: { latitude: Number(lat), longitude: Number(lon) } }); }} style={styles.webInput} />
-                    ) : (
-                      <TextInput value={`${settings.staffLocation?.latitude||''},${settings.staffLocation?.longitude||''}`} onChangeText={t=>{ const [lat,lon]=t.split(','); setSettings({ ...settings, staffLocation: { latitude: Number(lat), longitude: Number(lon) } }); }} style={styles.input} placeholder="lat,lon" />
-                    )}
-                    <TouchableOpacity onPress={async()=>{
-                      try {
-                        const { status } = await Location.requestForegroundPermissionsAsync();
-                        if (status === 'granted') {
-                          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-                          setSettings({ ...settings, staffLocation: { latitude: loc.coords.latitude, longitude: loc.coords.longitude } });
-                        }
-                      } catch {}
-                    }} style={styles.secondaryBtn}><Text style={styles.secondaryBtnText}>Use My Current Location</Text></TouchableOpacity>
                   </View>
-                )}
-
-                {settings.locationMode==='user' && (
-                  <View style={{ gap: 8 }}>
-                    <Text style={styles.muted}>Anchor Username/RegNo</Text>
-                    {Platform.OS==='web' ? (
-                      <input value={settings.proximityUsername||''} onChange={e=>setSettings({ ...settings, proximityUsername: e.target.value })} style={styles.webInput} />
-                    ) : (
-                      <TextInput value={settings.proximityUsername||''} onChangeText={t=>setSettings({ ...settings, proximityUsername: t })} style={styles.input} placeholder="username or reg no" />
-                    )}
-
-                    <Text style={styles.muted}>Radius (meters)</Text>
-                    {Platform.OS==='web' ? (
-                      <input type="number" value={settings.proximityRadiusMeters||100} onChange={e=>setSettings({ ...settings, proximityRadiusMeters: Number(e.target.value||'100') })} style={styles.webInput} />
-                    ) : (
-                      <TextInput value={String(settings.proximityRadiusMeters||100)} onChangeText={t=>setSettings({ ...settings, proximityRadiusMeters: Number(t||'100') })} style={styles.input} placeholder="100" />
-                    )}
-
-                    <Text style={styles.muted}>Anchor Location (lat,lon)</Text>
+                  <View style={{ gap: 6 }}>
+                    <Text style={styles.muted}>Additional Live Location</Text>
                     {Platform.OS==='web' ? (
                       <input value={`${settings.proximityLocation?.latitude||''},${settings.proximityLocation?.longitude||''}`} onChange={e=>{ const [lat,lon]=e.target.value.split(','); setSettings({ ...settings, proximityLocation: { latitude: Number(lat), longitude: Number(lon) } }); }} style={styles.webInput} />
                     ) : (
@@ -512,10 +518,9 @@ export default function AdminDashboard() {
                         }
                       } catch {}
                     }} style={styles.secondaryBtn}><Text style={styles.secondaryBtnText}>Use My Current Location</Text></TouchableOpacity>
-
-                    <Text style={styles.hint}>Only users within the radius (default 100m) of this anchor will be marked present.</Text>
+                    <Text style={styles.hint}>Students within {String(settings.proximityRadiusMeters||100)}m of this additional anchor will count present.</Text>
                   </View>
-                )}
+                </View>
 
                 <TouchableOpacity onPress={saveSettings} style={styles.primaryBtn}><Text style={styles.primaryBtnText}>Save Settings</Text></TouchableOpacity>
               </View>
@@ -651,7 +656,9 @@ const styles = StyleSheet.create({
   },
   brand: { fontSize: 20, fontWeight: '800', color: '#010101ff' },
   navRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 18, flexWrap: 'wrap' },
+  navRowSmall: { flexDirection:'row', flexWrap:'wrap', gap: 12 },
   navTab: { alignItems: 'center' },
+  navTabBig: { width: '100%', alignItems:'flex-start' },
   navTabText: { color: '#000000ff', fontWeight: '800', fontSize: 14 },
   navTabTextActive: { color: '#000000ff' },
   navUnderline: { height: 2, width: '100%', backgroundColor: 'transparent', marginTop: 4, borderRadius: 9999 },
