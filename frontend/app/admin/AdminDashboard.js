@@ -190,7 +190,7 @@ export default function AdminDashboard() {
   );
 
   const Panel = ({ style, children }) => (
-    <BlurView intensity={40} tint="light" style={[styles.card, style]}>{children}</BlurView>
+    <BlurView intensity={Platform.OS==='web' ? 0 : 40} tint="light" style={[styles.card, style]}>{children}</BlurView>
   );
 
   const TableContainer = ({ children, minWidth = 820 }) => {
@@ -518,8 +518,28 @@ export default function AdminDashboard() {
                         }
                       } catch {}
                     }} style={styles.secondaryBtn}><Text style={styles.secondaryBtnText}>Use My Current Location</Text></TouchableOpacity>
+                    <View style={styles.segmentRow}>
+                      {[100,200].map(r => (
+                        Platform.OS==='web' ? (
+                          <button key={r} onClick={()=>setSettings({ ...settings, proximityRadiusMeters: r })} style={{ padding: 8, borderRadius: 8, border: '1px solid #ccfbf1', background: (settings.proximityRadiusMeters||100)===r ? '#99f6e4' : 'transparent' }}>{r} m</button>
+                        ) : (
+                          <TouchableOpacity key={r} onPress={()=>setSettings({ ...settings, proximityRadiusMeters: r })} style={[styles.segmentBtn, (settings.proximityRadiusMeters||100)===r && styles.segmentActive]}>
+                            <Text style={styles.segmentLabel}>{r} m</Text>
+                          </TouchableOpacity>
+                        )
+                      ))}
+                    </View>
                     <Text style={styles.hint}>Students within {String(settings.proximityRadiusMeters||100)}m of this additional anchor will count present.</Text>
                   </View>
+                </View>
+
+                <Text style={styles.muted}>Pings required for Present (per period)</Text>
+                <View style={styles.segmentRow}>
+                  {[2,3,4].map(n => (
+                    <TouchableOpacity key={n} onPress={()=>setSettings({ ...settings, pingThresholdPerPeriod: n })} style={[styles.segmentBtn, (settings.pingThresholdPerPeriod||4)===n && styles.segmentActive]}>
+                      <Text style={styles.segmentLabel}>{n}</Text>
+                    </TouchableOpacity>
+                  ))}
                 </View>
 
                 <TouchableOpacity onPress={saveSettings} style={styles.primaryBtn}><Text style={styles.primaryBtnText}>Save Settings</Text></TouchableOpacity>

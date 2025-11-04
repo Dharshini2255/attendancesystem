@@ -210,30 +210,30 @@ app.post('/attendance/mark', async (req, res) => {
     const student = await Student.findById(studentId);
     if (!student) return res.status(404).json({ error: "Student not found" });
 
-    // choose reference location based on admin settings
+    // read settings
     const settings = await AdminSettings.findOne({ key: 'global' }).lean();
     const collegeDefault = { latitude: 12.8005328, longitude: 80.0388091 };
-    const target = settings?.locationMode === 'staff' && settings?.staffLocation?.latitude
-      ? settings.staffLocation
-      : (settings?.collegeLocation?.latitude ? settings.collegeLocation : collegeDefault);
+    const collegeAnchor = settings?.collegeLocation?.latitude ? settings.collegeLocation : collegeDefault;
+    const proximityAnchor = settings?.proximityLocation;
+    const proximityRadius = Number(settings?.proximityRadiusMeters || 100);
 
-    const MAX_RADIUS_METERS = parseInt(process.env.MAX_RADIUS_METERS || '50000', 10); // widen for testing; set to 100 in prod
+    const MAX_RADIUS_METERS = parseInt(process.env.MAX_RADIUS_METERS || '50000', 10); // campus radius
 
     const toRad = (value) => (value * Math.PI) / 180;
     const R = 6371000;
-    const dLat = toRad(location.latitude - target.latitude);
-    const dLon = toRad(location.longitude - target.longitude);
-    const lat1 = toRad(target.latitude);
-    const lat2 = toRad(location.latitude);
+    const distanceMeters = (a, b) => {
+      const dLat = toRad(a.latitude - b.latitude);
+      const dLon = toRad(a.longitude - b.longitude);
+      const lat1 = toRad(b.latitude);
+      const lat2 = toRad(a.latitude);
+      const h = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
+      return 2 * R * Math.atan2(Math.sqrt(h), Math.sqrt(1-h));
+    };
 
-    const a =
-      Math.sin(dLat / 2) ** 2 +
-      Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    const distance = R * c;
-
-    if (distance > MAX_RADIUS_METERS) {
-      return res.status(403).json({ error: "Outside college location. Attendance not marked." });
+    const allowedByCollege = settings?.useCollegeLocation ? (distanceMeters(location, collegeAnchor) <= MAX_RADIUS_METERS) : false;
+    const allowedByProximity = proximityAnchor ? (distanceMeters(location, proximityAnchor) <= proximityRadius && !!student.loggedIn) : false;
+    if (!(allowedByCollege || allowedByProximity)) {
+      return res.status(403).json({ error: "Outside allowed location. Attendance not marked." });
     }
 
     const { biometricType, biometricVerified } = req.body || {};
@@ -263,15 +263,9 @@ app.post('/attendance/mark', async (req, res) => {
     });
 
     const validPings = allPings.filter(p => {
-      const dLat = toRad(p.location.latitude - target.latitude);
-      const dLon = toRad(p.location.longitude - target.longitude);
-      const lat1 = toRad(target.latitude);
-      const lat2 = toRad(p.location.latitude);
-      const a =
-        Math.sin(dLat / 2) ** 2 +
-        Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      return R * c <= MAX_RADIUS_METERS;
+      const byCollege = settings?.useCollegeLocation ? (distanceMeters(p.location, collegeAnchor) <= MAX_RADIUS_METERS) : false;
+      const byProx = proximityAnchor ? (distanceMeters(p.location, proximityAnchor) <= proximityRadius && !!student.loggedIn) : false;
+      return byCollege || byProx;
     });
 
     const hasBiometric = validPings.some(p => p.biometricVerified === true);
@@ -280,7 +274,8 @@ app.post('/attendance/mark', async (req, res) => {
       return res.status(403).json({ error: 'Biometric enrollment required. Please complete biometric setup.' });
     }
 
-    if (validPings.length >= 4 && hasBiometric) {
+    const threshold = Number(settings?.pingThresholdPerPeriod || 4);
+    if (validPings.length >= threshold && hasBiometric) {
       const todayLocal = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
       let attendance = await Attendance.findOne({ studentId, date: todayLocal });
 
@@ -379,9 +374,15 @@ const adminSettingsSchema = new mongoose.Schema({
   classes: [String],
   sections: [String],
   years: [Number],
-  locationMode: { type: String, enum: ['college','staff'], default: 'college' },
+  // Location controls
+  locationMode: { type: String, enum: ['college','staff'], default: 'college' }, // legacy
+  useCollegeLocation: { type: Boolean, default: true },
   collegeLocation: { latitude: Number, longitude: Number },
-  staffLocation: { latitude: Number, longitude: Number }
+  staffLocation: { latitude: Number, longitude: Number },
+  proximityLocation: { latitude: Number, longitude: Number },
+  proximityRadiusMeters: { type: Number, default: 100 },
+  // Attendance rules
+  pingThresholdPerPeriod: { type: Number, default: 4 }
 });
 const AdminSettings = mongoose.model('AdminSettings', adminSettingsSchema);
 
@@ -417,7 +418,17 @@ app.post('/admin/ping-control', async (req, res) => {
 app.get('/admin/settings', async (_req, res) => {
   try {
     let s = await AdminSettings.findOne({ key: 'global' }).lean();
-    if (!s) s = { date: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }), day: '', startTime: '09:00', endTime: '17:00', classes: [], sections: [], years: [], locationMode: 'college', collegeLocation: { latitude: 12.8005328, longitude: 80.0388091 } };
+    if (!s) s = { 
+      date: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }), 
+      day: '', startTime: '09:00', endTime: '17:00', 
+      classes: [], sections: [], years: [],
+      locationMode: 'college',
+      useCollegeLocation: true,
+      collegeLocation: { latitude: 12.8005328, longitude: 80.0388091 },
+      proximityLocation: null,
+      proximityRadiusMeters: 100,
+      pingThresholdPerPeriod: 4,
+    };
     res.json(s);
   } catch (err) {
     console.error('Admin settings get error:', err);
