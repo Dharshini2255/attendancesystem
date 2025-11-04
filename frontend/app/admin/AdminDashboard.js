@@ -989,7 +989,7 @@ const styles = StyleSheet.create({
 
   analyticsRow: { flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginTop: 12 },
   gaugeWrap: { alignItems:'center', justifyContent:'center' },
-  gaugeCircle: { width: 80, height: 80, borderRadius: 40, borderWidth: 8, borderColor: '#60a5fa', alignItems:'center', justifyContent:'center', backgroundColor:'rgba(255,255,255,0.6)' },
+  gaugeCircle: { width: 80, height: 80, borderRadius: 40, borderWidth: 8, borderColor: '#ffffffff', alignItems:'center', justifyContent:'center', backgroundColor:'rgba(255,255,255,0.6)' },
   gaugeText: { fontWeight:'800', color:'#0f172a' },
   donutRow: { flexDirection:'row', gap: 12 },
   donut: { width: 40, height: 40, borderRadius: 20, borderWidth: 6, backgroundColor:'transparent' },
@@ -1033,5 +1033,5 @@ const styles = StyleSheet.create({
 
   // History modal styles
   histBackdrop: { position:'fixed', top:0, left:0, right:0, bottom:0, backgroundColor:'rgba(0,0,0,0.5)', zIndex:2000, alignItems:'center', justifyContent:'center' },
-  histCard: { width:'90%', maxWidth: 1100, maxHeight: '90%', padding:16, borderRadius:16, backgroundColor:'rgba(104, 100, 100, 0.95)', ...Platform.select({ web: { overflowY:'auto' }, default: {} }) },
+  histCard: { width:'90%', maxWidth: 1100, maxHeight: '90%', padding:16, borderRadius:16, border:'1px solid #000000ff', backgroundColor:'rgba(126, 126, 189, 0.95)', ...Platform.select({ web: { overflowY:'auto' }, default: {} }) },
 });
