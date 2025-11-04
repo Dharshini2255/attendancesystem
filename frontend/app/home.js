@@ -217,37 +217,31 @@ useEffect(() => {
             <Text style={styles.label}>UUID: <Text style={styles.value}>{user.uuid}</Text></Text>
           </View>
 
-          {/* Ping Buttons */}
+          {/* Today's Attendance */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>📍 Ping Attendance</Text>
-            <View style={styles.buttonRow}>
-              <Button title="Start" onPress={() => sendPing(1, 'start')} />
-              <Button title="+5 min" onPress={() => sendPing(1, 'afterStart15')} />
-              <Button title="-5 min" onPress={() => sendPing(1, 'beforeEnd10')} />
-              <Button title="End" onPress={() => sendPing(1, 'end')} />
-            </View>
-            {status ? <Text style={styles.status}>{status}</Text> : null}
-          </View>
-
-          {/* Attendance Summary */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>🗓️ Attendance for {attendanceDate || 'Today'}</Text>
-            {attendance.length === 0 ? (
-              <Text style={styles.label}>No attendance recorded yet.</Text>
-            ) : (
-              attendance.map((p, index) => (
-                <Text
-                  key={index}
-                  style={{
-                    color: p.status === 'present' ? '#0f0' : '#f00',
-                    fontSize: 16,
-                    marginBottom: 4
-                  }}
-                >
-                  Period {p.periodNumber}: {p.status === 'present' ? '✅ Present' : '❌ Absent'}
+            <Text style={styles.sectionTitle}>Today's Attendance</Text>
+            {(() => {
+              const map = {};
+              (attendance || []).forEach(p => { map[p.periodNumber] = p.status; });
+              const ord = ['1st','2nd','3rd','4th','5th','6th','7th','8th'];
+              const lines = [];
+              let overall = 'present';
+              for (let i=1;i<=8;i++) {
+                const st = map[i] || 'absent';
+                if (st !== 'present') overall = 'absent';
+                lines.push(
+                  <Text key={i} style={{ color: st==='present' ? '#0f0' : '#f00', fontSize: 16, marginBottom: 4 }}>
+                    {ord[i-1]} period - {st}
+                  </Text>
+                );
+              }
+              lines.push(
+                <Text key="overall" style={{ color: overall==='present' ? '#0f0' : '#f00', fontSize: 16, marginTop: 6 }}>
+                  overall attendance - {overall}
                 </Text>
-              ))
-            )}
+              );
+              return lines;
+            })()}
           </View>
         </ScrollView>
 

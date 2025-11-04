@@ -386,7 +386,7 @@ export default function AdminDashboard() {
                   ) : (
                     <TextInput value={to} onChangeText={setTo} placeholder="To (YYYY-MM-DD)" style={styles.input} />
                   )}
-                  <TouchableOpacity onPress={()=>{ if (attendanceView==='attendance') loadAttendance(); else loadUsers(); }} style={styles.primaryBtn}>
+                  <TouchableOpacity onPress={()=>{ if (attendanceView==='attendance') loadAttendance(); else loadUsers(); }} style={[styles.primaryBtn, styles.applyBtn]}>
                     <Text style={styles.primaryBtnText}>Apply</Text>
                   </TouchableOpacity>
                 </View>
@@ -756,7 +756,7 @@ export default function AdminDashboard() {
                     else loadPings();
                     loadUsers();
                   }} 
-                  style={[styles.primaryBtn,{alignSelf:'flex-start'}]}
+                  style={styles.applyBtn}
                 >
                   <Text style={styles.primaryBtnText}>Apply Filters</Text>
                 </TouchableOpacity>
@@ -824,7 +824,7 @@ export default function AdminDashboard() {
                 <TouchableOpacity onPress={async ()=>{
                   try { const s = await fetch(`${api}/admin/settings`).then(r=>r.json()); setSettingsCache(s); } catch {}
                   try { const params = new URLSearchParams({ from: historyFrom, to: historyTo }); const res = await fetch(`${api}/admin/student/${encodeURIComponent(historyUser._id)}/history?${params}`); const detail=await res.json(); setHistoryData(detail || { records: [], pings: [] }); } catch {}
-                }} style={styles.primaryBtn}><Text style={styles.primaryBtnText}>Apply</Text></TouchableOpacity>
+                }} style={styles.applyBtn}><Text style={styles.primaryBtnText}>Apply</Text></TouchableOpacity>
               </View>
             </View>
 
@@ -967,8 +967,9 @@ const styles = StyleSheet.create({
   muted: { color: '#526581ff' },
   value: { color: '#0f172a', fontWeight: '700' },
   rowBetween: { flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginTop: 4 },
-  primaryBtn: { marginTop: 12, backgroundColor: '#0a0a0aff', paddingVertical: 10, borderRadius: 5, alignItems: 'center',fontFamily:'times new roman' },
-  primaryBtnText: { color: '#fcfdffff', fontWeight: '800' },
+  primaryBtn: { marginTop: 12, backgroundColor: '#0a0a0aff', paddingVertical: 10, borderRadius: 5, alignItems: 'center', justifyContent:'center' },
+  applyBtn: { backgroundColor: '#0a0a0aff', paddingVertical: 10, paddingHorizontal: 14, borderRadius: 5, alignItems: 'center', justifyContent:'center', minHeight: 40, ...Platform.select({ web: { display:'inline-flex' }, default: {} }) },
+  primaryBtnText: { color: '#fcfdffff', fontWeight: '800', textAlign:'center' },
   secondaryBtn: { backgroundColor: 'rgba(96,165,250,0.15)', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 8, marginTop: 6 },
   secondaryBtnText: { color: '#000000ff', fontWeight: '700' },
   link: { color: '#000000ff', fontWeight: '700', textDecorationLine: 'underline' },
@@ -999,7 +1000,7 @@ const styles = StyleSheet.create({
   segmentActive: { backgroundColor:'rgba(139, 129, 129, 0.9)' },
   segmentLabel: { color:'#0f172a', fontWeight:'700' },
 
-  input: { padding: 10, backgroundColor:'rgba(255, 255, 255, 1), 0.8)', borderRadius: 10, color:'#0f172a' },
+  input: { padding: 10, backgroundColor:'rgba(255,255,255,0.8)', borderRadius: 10, color:'#0f172a' },
   webInput: { padding: 10, background: 'rgba(255, 255, 255, 1)', borderRadius: 10, border: '1px solid rgba(148,163,184,0.35)' },
 
   // Table styles
@@ -1033,5 +1034,5 @@ const styles = StyleSheet.create({
 
   // History modal styles
   histBackdrop: { position:'fixed', top:0, left:0, right:0, bottom:0, backgroundColor:'rgba(0,0,0,0.5)', zIndex:2000, alignItems:'center', justifyContent:'center' },
-  histCard: { width:'90%', maxWidth: 1100, maxHeight: '90%', padding:16, borderRadius:16, border:'1px solid #000000ff', backgroundColor:'rgba(126, 126, 189, 0.95)', ...Platform.select({ web: { overflowY:'auto' }, default: {} }) },
+  histCard: { width:'90%', maxWidth: 1100, maxHeight: '90%', padding:16, borderRadius:16, borderWidth:1, borderColor:'#000', backgroundColor:'rgba(126, 126, 189, 0.95)', ...Platform.select({ web: { overflowY:'auto' }, default: {} }) },
 });
