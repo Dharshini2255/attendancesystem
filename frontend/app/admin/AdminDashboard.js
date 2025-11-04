@@ -637,9 +637,9 @@ const styles = StyleSheet.create({
   fill: { flex: 1 },
   bg: Platform.select({
     web: {
-      backgroundImage: 'linear-gradient(135deg, #cf49caff 0%, #cd52d5ff 50%, #c82fdfff 100%)',
+      backgroundImage: 'linear-gradient(135deg, #c239e4ff 0%, #cd52d5ff 50%, #c82fdfff 100%)',
     },
-    default: { backgroundColor: '#c92cd7ff' },
+    default: { backgroundColor: '#a028b8ff' },
   }),
 
   topBar: {
