@@ -30,6 +30,15 @@ export default function AdminDashboard() {
   const { width } = useWindowDimensions();
   const isSmall = width < 768;
 
+  // Student history modal state
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyUser, setHistoryUser] = useState(null);
+  const [historyFrom, setHistoryFrom] = useState(new Date().toLocaleDateString('en-CA'));
+  const [historyTo, setHistoryTo] = useState(new Date().toLocaleDateString('en-CA'));
+  const [historyData, setHistoryData] = useState({ records: [], pings: [] });
+  const [historyGran, setHistoryGran] = useState('date'); // date | month | year
+  const [settingsCache, setSettingsCache] = useState(null);
+
   useEffect(() => {
     (async () => {
       try {
@@ -410,7 +419,22 @@ export default function AdminDashboard() {
                   </View>
                   {users.map((u, i) => (
                     <View key={u._id || i} style={styles.tableRow}>
-                      <Text style={[styles.td, { flex: 2 }]}>{u.name}</Text>
+                      <TouchableOpacity style={{ flex: 2 }} onPress={async ()=>{
+                        setHistoryUser(u);
+                        setHistoryOpen(true);
+                        try {
+                          const s = await fetch(`${api}/admin/settings`).then(r=>r.json());
+                          setSettingsCache(s);
+                        } catch {}
+                        try {
+                          const params = new URLSearchParams({ from: historyFrom, to: historyTo });
+                          const res = await fetch(`${api}/admin/student/${encodeURIComponent(u._id)}/history?${params}`);
+                          const detail = await res.json();
+                          setHistoryData(detail || { records: [], pings: [] });
+                        } catch {}
+                      }}>
+                        <Text style={[styles.td, { color:'#2563eb', textDecorationLine:'underline' }]}>{u.name}</Text>
+                      </TouchableOpacity>
                       <Text style={[styles.td, { flex: 1.5 }]}>{u.regNo}</Text>
                       <Text style={[styles.td, { flex: 1 }]}>{u.class}</Text>
                       <Text style={[styles.td, { flex: 0.8 }]}>{u.year}</Text>
@@ -578,6 +602,35 @@ export default function AdminDashboard() {
                   ))}
                 </View>
 
+                <Text style={styles.muted}>Ping interval (value + unit)</Text>
+                <View style={styles.segmentRow}>
+                  {Platform.OS==='web' ? (
+                    <input type="number" min="1" value={String(Math.max(1, Math.round((settings.pingIntervalMs||60000)/1000)))} onChange={e=>{
+                      const seconds = Number(e.target.value||'60');
+                      setSettings({ ...settings, pingIntervalMs: seconds*1000 });
+                    }} style={styles.webInput} />
+                  ) : (
+                    <TextInput value={String(Math.max(1, Math.round((settings.pingIntervalMs||60000)/1000)))} onChangeText={t=>{
+                      const seconds = Number(t||'60');
+                      setSettings({ ...settings, pingIntervalMs: seconds*1000 });
+                    }} style={styles.input} placeholder="60" />
+                  )}
+                  {Platform.OS==='web' ? (
+                    <select value={(settings.pingIntervalMs||60000) % 3600000 === 0 ? 'hours' : (settings.pingIntervalMs||60000) % 60000 === 0 ? 'minutes' : 'seconds'} onChange={e=>{
+                      const unit = e.target.value;
+                      const baseSeconds = Math.max(1, Math.round((settings.pingIntervalMs||60000)/1000));
+                      const ms = unit==='hours' ? baseSeconds*1000*60*60/baseSeconds*baseSeconds : unit==='minutes' ? baseSeconds*1000*60 : baseSeconds*1000;
+                      setSettings({ ...settings, pingIntervalMs: ms });
+                    }} style={styles.webInput}>
+                      <option value="seconds">seconds</option>
+                      <option value="minutes">minutes</option>
+                      <option value="hours">hours</option>
+                    </select>
+                  ) : (
+                    <Text style={styles.muted}>seconds</Text>
+                  )}
+                </View>
+
                 <Text style={styles.muted}>Biometric trigger mode</Text>
                 <View style={styles.segmentRow}>
                   {['pingNumber','time','period'].map(m => (
@@ -738,6 +791,117 @@ export default function AdminDashboard() {
           </View>
         </View>
       )}
+
+      {/* Student history modal */}
+      {historyOpen && (
+        <View style={styles.histBackdrop}>
+          <View style={styles.histCard}>
+            <View style={{ flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom: 8 }}>
+              <Text style={styles.panelTitle}>History - {historyUser?.name} ({historyUser?.regNo})</Text>
+              <TouchableOpacity onPress={()=>setHistoryOpen(false)} style={styles.closeBtn}><Text style={styles.closeBtnText}>✕</Text></TouchableOpacity>
+            </View>
+
+            <View style={{ gap: 8, marginBottom: 12 }}>
+              <Text style={styles.muted}>Filters</Text>
+              <View style={styles.segmentRow}>
+                {['date','month','year'].map(g => (
+                  <TouchableOpacity key={g} onPress={()=>setHistoryGran(g)} style={[styles.segmentBtn, historyGran===g && styles.segmentActive]}>
+                    <Text style={styles.segmentLabel}>{g}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <View style={styles.segmentRow}>
+                {Platform.OS==='web' ? (
+                  <input type="date" value={historyFrom} onChange={e=>setHistoryFrom(e.target.value)} style={styles.webInput} />
+                ) : (
+                  <TextInput value={historyFrom} onChangeText={setHistoryFrom} style={styles.input} placeholder="YYYY-MM-DD" />
+                )}
+                {Platform.OS==='web' ? (
+                  <input type="date" value={historyTo} onChange={e=>setHistoryTo(e.target.value)} style={styles.webInput} />
+                ) : (
+                  <TextInput value={historyTo} onChangeText={setHistoryTo} style={styles.input} placeholder="YYYY-MM-DD" />
+                )}
+                <TouchableOpacity onPress={async ()=>{
+                  try { const s = await fetch(`${api}/admin/settings`).then(r=>r.json()); setSettingsCache(s); } catch {}
+                  try { const params = new URLSearchParams({ from: historyFrom, to: historyTo }); const res = await fetch(`${api}/admin/student/${encodeURIComponent(historyUser._id)}/history?${params}`); const detail=await res.json(); setHistoryData(detail || { records: [], pings: [] }); } catch {}
+                }} style={styles.primaryBtn}><Text style={styles.primaryBtnText}>Apply</Text></TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Overall Attendance */}
+            <Text style={styles.panelTitle}>Overall Attendance</Text>
+            <TableContainer minWidth={900}>
+              <View style={styles.tableHeader}>
+                <Text style={[styles.th,{flex:1.2}]}>Date</Text>
+                {Array.from({length:8}).map((_,idx)=>(<Text key={idx} style={[styles.th,{flex:1}]}>P{idx+1}</Text>))}
+                <Text style={[styles.th,{flex:1.5}]}>Overall</Text>
+              </View>
+              {(historyData.records||[]).map((r,i)=>{
+                const statusByPeriod = {};
+                (r.periods||[]).forEach(p=>{ statusByPeriod[p.periodNumber]=p.status; });
+                const overall = (r.periods||[]).every(p=>p.status==='present') ? 'present' : ((r.periods||[]).some(p=>p.status==='present')?'partial':'absent');
+                return (
+                  <View key={i} style={styles.tableRow}>
+                    <Text style={[styles.td,{flex:1.2}]}>{r.date}</Text>
+                    {Array.from({length:8}).map((_,idx)=> (
+                      <Text key={idx} style={[styles.td,{flex:1}]}>{statusByPeriod[idx+1]||'-'}</Text>
+                    ))}
+                    <Text style={[styles.td,{flex:1.5}]}>{overall}</Text>
+                  </View>
+                );
+              })}
+            </TableContainer>
+
+            {/* Detailed Attendance */}
+            <View style={{ height: 12 }} />
+            <Text style={styles.panelTitle}>Detailed Attendance</Text>
+            <TableContainer minWidth={800}>
+              <View style={styles.tableHeader}>
+                <Text style={[styles.th,{flex:1.2}]}>Date</Text>
+                <Text style={[styles.th,{flex:1.2}]}>No. of Pings</Text>
+                <Text style={[styles.th,{flex:1.6}]}>Location (college | live)</Text>
+                <Text style={[styles.th,{flex:0.8}]}>Period</Text>
+                <Text style={[styles.th,{flex:1.2}]}>Attendance</Text>
+              </View>
+              {(() => {
+                const s = settingsCache||{};
+                const collegePoly = s.collegePolygon||[];
+                const campusRadius= 50000; // same as server default MAX_RADIUS_METERS unless polygon exists
+                const toRad = (v)=> (v*Math.PI)/180; const R=6371000;
+                const dist=(a,b)=>{ const dLat=toRad(a.latitude-b.latitude), dLon=toRad(a.longitude-b.longitude); const lat1=toRad(b.latitude), lat2=toRad(a.latitude); const h=Math.sin(dLat/2)**2+Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2; return 2*R*Math.atan2(Math.sqrt(h),Math.sqrt(1-h)); };
+                const pinPoly=(pt,poly)=>{ if(!poly||poly.length<3) return false; let inside=false; for(let i=0,j=poly.length-1;i<poly.length;j=i++){const xi=poly[i].latitude, yi=poly[i].longitude; const xj=poly[j].latitude, yj=poly[j].longitude; const intersect=((yi>pt.longitude)!==(yj>pt.longitude)) && (pt.latitude < (xj - xi) * (pt.longitude - yi) / (yj - yi + 1e-12) + xi); if(intersect) inside=!inside;} return inside; };
+                const liveAnchors = s.proximityAnchors||[];
+                const singleAnchor = s.proximityLocation; const singleR = s.proximityRadiusMeters||100;
+                const rows = [];
+                const byDate = {};
+                (historyData.pings||[]).forEach(p=>{
+                  const d = new Date(p.timestamp).toLocaleDateString('en-CA');
+                  if(!byDate[d]) byDate[d]=[]; byDate[d].push(p);
+                });
+                Object.keys(byDate).sort().forEach(d=>{
+                  byDate[d].forEach((p,idx)=>{
+                    const loc = { latitude: p.location?.latitude, longitude: p.location?.longitude };
+                    const inCollege = (collegePoly.length>=3 ? pinPoly(loc, collegePoly) : (s.useCollegeLocation && s.collegeLocation && dist(loc, s.collegeLocation)<=campusRadius));
+                    let inLive = false; if(singleAnchor?.latitude){ inLive = dist(loc, singleAnchor)<=singleR; }
+                    for(const a of liveAnchors){ if(a?.location?.latitude && dist(loc,a.location)<= (a.radiusMeters||100)) { inLive=true; break; } }
+                    rows.push(
+                      <View key={`${d}-${idx}`} style={styles.tableRow}>
+                        <Text style={[styles.td,{flex:1.2}]}>{d}</Text>
+                        <Text style={[styles.td,{flex:1.2}]}>{idx+1}</Text>
+                        <Text style={[styles.td,{flex:1.6}]}>{inCollege?'yes':'no'} | {inLive?'yes':'no'}</Text>
+                        <Text style={[styles.td,{flex:0.8}]}>{p.periodNumber||''}</Text>
+                        <Text style={[styles.td,{flex:1.2}]}>{p.biometricVerified? 'present' : 'present'}</Text>
+                      </View>
+                    );
+                  });
+                });
+                return rows;
+              })()}
+            </TableContainer>
+          </View>
+        </View>
+      )}
+
     </SafeAreaView>
   );
 }
@@ -866,4 +1030,8 @@ const styles = StyleSheet.create({
   chartBar: { height:20, flexDirection:'row', backgroundColor:'rgba(148,163,184,0.25)', borderRadius:4, overflow:'hidden', marginBottom:4 },
   chartSegment: { height:'100%' },
   chartLabel: { fontSize:12, color:'#475569' },
+
+  // History modal styles
+  histBackdrop: { position:'fixed', top:0, left:0, right:0, bottom:0, backgroundColor:'rgba(0,0,0,0.5)', zIndex:2000, alignItems:'center', justifyContent:'center' },
+  histCard: { width:'90%', maxWidth: 1100, maxHeight: '90%', padding:16, borderRadius:16, backgroundColor:'rgba(104, 100, 100, 0.95)', ...Platform.select({ web: { overflowY:'auto' }, default: {} }) },
 });

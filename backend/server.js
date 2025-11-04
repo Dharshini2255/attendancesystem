@@ -431,6 +431,7 @@ const adminSettingsSchema = new mongoose.Schema({
   proximityAnchors: [{ username: String, regNo: String, location: { latitude: Number, longitude: Number }, radiusMeters: { type: Number, default: 100 } }],
   // Attendance rules
   pingThresholdPerPeriod: { type: Number, default: 4 },
+  pingIntervalMs: { type: Number, default: 60000 },
   // Biometric trigger configuration
   biometricTriggerMode: { type: String, enum: ['pingNumber','time','period'], default: 'pingNumber' },
   biometricAtPingNumber: { type: Number, default: 1 },
@@ -483,6 +484,7 @@ app.get('/admin/settings', async (_req, res) => {
       proximityRadiusMeters: 100,
       proximityAnchors: [],
       pingThresholdPerPeriod: 4,
+      pingIntervalMs: 60000,
       biometricTriggerMode: 'pingNumber',
       biometricAtPingNumber: 1,
       biometricTimeWindows: [],
