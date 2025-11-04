@@ -1,10 +1,12 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Alert, ScrollView, StyleSheet, Text, View, TouchableOpacity, Platform, TextInput, Switch } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, View, TouchableOpacity, Platform, TextInput, Switch, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { Image } from 'expo-image';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Location from 'expo-location';
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -25,6 +27,8 @@ export default function AdminDashboard() {
   const [showFilters, setShowFilters] = useState(false);
   const [settings, setSettings] = useState({ date: new Date().toLocaleDateString('en-CA'), day: '', startTime: '09:00', endTime: '17:00', classes: [], sections: [], years: [], locationMode: 'college', collegeLocation: { latitude: 12.8005328, longitude: 80.0388091 }, staffLocation: { latitude: 0, longitude: 0 } });
   const [notifications, setNotifications] = useState([]);
+  const { width } = useWindowDimensions();
+  const isSmall = width < 768;
 
   useEffect(() => {
     (async () => {
@@ -163,21 +167,25 @@ export default function AdminDashboard() {
 
   const departmentOptions = useMemo(() => {
     const vals = Array.from(new Set((users||[]).map(u=>u.department).filter(Boolean)));
-    return vals.length ? vals : ['CSE','ECE','EEE','IT','MECH','CIVIL'];
+    return vals.length ? vals : ['CSE','IT','ECE','EEE','MECH','CIVIL'];
   }, [users]);
   const classOptions = useMemo(() => {
+    const d = (settings.department || '').toUpperCase();
+    if (d) {
+      return ['A','B','C','D','E'].map(sec => `${d}-${sec}`);
+    }
     const vals = Array.from(new Set((users||[]).map(u=>u.class).filter(Boolean)));
-    return vals.length ? vals : ['CSE-A','CSE-B','ECE-A','EEE-A','IT-A'];
-  }, [users]);
+    return vals.length ? vals : ['CSE-A','CSE-B','CSE-C','CSE-D','CSE-E'];
+  }, [users, settings.department]);
 
   if (!authorized) {
     return <View style={[styles.fill, styles.bg]}><Text style={{ color: '#1f2937' }}>Checking admin access…</Text></View>;
   }
 
-  const NavItem = ({ active, icon, label, onPress }) => (
-    <TouchableOpacity onPress={onPress} style={[styles.navItem, active && styles.navItemActive]}>
-      <Ionicons name={icon} size={18} color={active ? '#0f172a' : '#334155'} />
-      <Text style={[styles.navLabel, active && styles.navLabelActive]}>{label}</Text>
+  const NavItem = ({ active, label, onPress }) => (
+    <TouchableOpacity onPress={onPress} style={styles.navTab}>
+      <Text style={[styles.navTabText, active && styles.navTabTextActive]}>{label}</Text>
+      <View style={[styles.navUnderline, active && styles.navUnderlineActive]} />
     </TouchableOpacity>
   );
 
@@ -185,24 +193,36 @@ export default function AdminDashboard() {
     <BlurView intensity={40} tint="light" style={[styles.card, style]}>{children}</BlurView>
   );
 
+  const TableContainer = ({ children, minWidth = 820 }) => {
+    if (Platform.OS === 'web' && !isSmall) {
+      return <View style={styles.table}>{children}</View>;
+    }
+    return (
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <View style={[styles.table, { minWidth }]}>{children}</View>
+      </ScrollView>
+    );
+  };
+
   return (
-    <View style={[styles.fill, styles.bg]}>
+    <SafeAreaView style={[styles.fill, styles.bg]}>
       {/* Top nav */}
       <View style={styles.topBar}>
         <Text style={styles.brand}>Admin Dashboard</Text>
         <View style={styles.navRow}>
-          <NavItem active={tab==='dashboard'} icon="grid-outline" label="Dashboard" onPress={() => { setTab('dashboard'); loadPings(); loadNotifications(); }} />
-          <NavItem active={tab==='settings'} icon="settings-outline" label="Settings" onPress={() => { setTab('settings'); readSettings(); }} />
-          <NavItem active={tab==='attendance'} icon="bar-chart-outline" label="Attendance" onPress={() => { setTab('attendance'); loadAttendance(); }} />
-          <NavItem active={tab==='notifications'} icon="notifications-outline" label="Notifications" onPress={() => { setTab('notifications'); loadNotifications(); }} />
+          <NavItem active={tab==='dashboard'} label="Dashboard" onPress={() => { setTab('dashboard'); loadPings(); loadNotifications(); }} />
+          <NavItem active={tab==='settings'} label="Settings" onPress={() => { setTab('settings'); readSettings(); }} />
+          <NavItem active={tab==='attendance'} label="Attendance" onPress={() => { setTab('attendance'); loadAttendance(); }} />
+          <NavItem active={tab==='notifications'} label="Notifications" onPress={() => { setTab('notifications'); loadNotifications(); }} />
           <TouchableOpacity onPress={async () => { await AsyncStorage.removeItem('adminAuth'); router.replace('/home'); }} style={styles.logout}>
-            <Ionicons name="log-out-outline" size={18} color="#334155" />
-            <Text style={styles.navLabel}>Logout</Text>
+            <Ionicons name="log-out-outline" size={18} color="#5b21b6" />
+            <Text style={styles.navTabText}>Logout</Text>
           </TouchableOpacity>
         </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.page}>
+        <Panel style={styles.contentBox}>
         {tab === 'dashboard' && (
           <View style={styles.grid}>
             {/* Left: Attendance Setup */}
@@ -245,7 +265,7 @@ export default function AdminDashboard() {
             {/* Full-width: Student roster and analytics */}
             <Panel style={styles.fullRow}>
               <Text style={styles.panelTitle}>Student Roster</Text>
-              <View style={styles.table}>
+              <TableContainer minWidth={700}>
                 <View style={styles.tableHeader}>
                   <Text style={[styles.th,{flex:2}]}>Name</Text>
                   <Text style={[styles.th,{flex:1.2}]}>Reg No</Text>
@@ -262,7 +282,7 @@ export default function AdminDashboard() {
                     <Text style={[styles.td,{flex:1}]}>{u.trackingEnabled? '✓' : '—'}</Text>
                   </View>
                 ))}
-              </View>
+              </TableContainer>
 
               {/* Side analytics */}
               <View style={styles.analyticsRow}>
@@ -286,7 +306,7 @@ export default function AdminDashboard() {
                 <Text style={styles.panelTitle}>Recent Pings</Text>
                 <TouchableOpacity onPress={loadPings}><Text style={styles.link}>Refresh</Text></TouchableOpacity>
               </View>
-              <View style={styles.table}>
+              <TableContainer>
                 <View style={styles.tableHeader}>
                   <Text style={[styles.th, { flex: 2 }]}>Time</Text>
                   <Text style={[styles.th, { flex: 1.5 }]}>Name</Text>
@@ -301,7 +321,7 @@ export default function AdminDashboard() {
                     <Text style={[styles.td,{flex:1.2}]}>{p.periodNumber||''} {p.timestampType||''}</Text>
                   </View>
                 ))}
-              </View>
+              </TableContainer>
             </Panel>
           </View>
         )}
@@ -323,7 +343,7 @@ export default function AdminDashboard() {
                   <Text style={styles.panelTitle}>Users</Text>
                   <TouchableOpacity onPress={exportUsers}><Text style={styles.link}>Export CSV</Text></TouchableOpacity>
                 </View>
-                <View style={styles.table}>
+                <TableContainer>
                   <View style={styles.tableHeader}>
                     <Text style={[styles.th, { flex: 2 }]}>Name</Text>
                     <Text style={[styles.th, { flex: 1.5 }]}>Reg No</Text>
@@ -342,7 +362,7 @@ export default function AdminDashboard() {
                       <Text style={[styles.td, { flex: 1.5 }]}>{u.username}</Text>
                     </View>
                   ))}
-                </View>
+                </TableContainer>
               </Panel>
             ) : (
               <Panel>
@@ -350,7 +370,7 @@ export default function AdminDashboard() {
                   <Text style={styles.panelTitle}>Attendance</Text>
                   <TouchableOpacity onPress={exportAttendance}><Text style={styles.link}>Export CSV</Text></TouchableOpacity>
                 </View>
-                <View style={styles.table}>
+                <TableContainer>
                   <View style={styles.tableHeader}>
                     <Text style={[styles.th, { flex: 1.5 }]}>{granularity==='day' ? 'Date' : 'Bucket'}</Text>
                     <Text style={[styles.th, { flex: 2 }]}>Name</Text>
@@ -377,9 +397,9 @@ export default function AdminDashboard() {
                         <Text style={[styles.td, { flex: 2 }]}>Present: {r.present} | Absent: {r.absent}</Text>
                       )}
                     </View>
-                  ))}
-                </View>
-              </Panel>
+            ))}
+            </TableContainer>
+          </Panel>
             )}
           </View>
         )}
@@ -388,7 +408,7 @@ export default function AdminDashboard() {
           <View style={{ width: '100%', gap: 16 }}>
             <Panel>
               <Text style={styles.panelTitle}>Attendance Settings</Text>
-              <View style={{ gap: 10 }}>
+              <View style={{ gap: 12 }}>
                 <Text style={styles.muted}>Date</Text>
                 {Platform.OS==='web' ? (
                   <input type="date" value={settings.date||''} onChange={e=>setSettings({ ...settings, date: e.target.value })} style={styles.webInput} />
@@ -414,13 +434,13 @@ export default function AdminDashboard() {
                   <TextInput value={settings.department||''} onChangeText={t=>setSettings({...settings, department:t})} style={styles.input} placeholder="Department" />
                 )}
 
-                <Text style={styles.muted}>Class</Text>
+                <Text style={styles.muted}>Class (5 per department)</Text>
                 {Platform.OS==='web' ? (
                   <select value={settings.class||''} onChange={e=>setSettings({ ...settings, class: e.target.value })} style={styles.webInput}>
                     {classOptions.map(opt=> <option key={opt} value={opt}>{opt}</option>)}
                   </select>
                 ) : (
-                  <TextInput value={settings.class||''} onChangeText={t=>setSettings({...settings, class:t})} style={styles.input} placeholder="e.g., CSE-A" />
+                  <TextInput value={settings.class||''} onChangeText={t=>setSettings({...settings, class:t})} style={styles.input} placeholder="e.g., CSE-A … CSE-E" />
                 )}
 
                 <Text style={styles.muted}>Year</Text>
@@ -432,10 +452,70 @@ export default function AdminDashboard() {
                   <TextInput value={String(settings.year||'')} onChangeText={t=>setSettings({...settings, year: Number(t||0)})} style={styles.input} placeholder="1-4" />
                 )}
 
-                <View style={styles.rowBetween}>
-                  <Text style={styles.muted}>Use College Location</Text>
-                  <Switch value={settings.locationMode==='college'} onValueChange={(v)=>setSettings({...settings, locationMode: v?'college':'staff'})} />
+                <Text style={styles.muted}>Location Mode</Text>
+                <View style={styles.segmentRow}>
+                  {['college','staff','user'].map(mode => (
+                    <TouchableOpacity key={mode} onPress={()=>setSettings({...settings, locationMode: mode})} style={[styles.segmentBtn, settings.locationMode===mode && styles.segmentActive]}>
+                      <Text style={styles.segmentLabel}>{mode==='college' ? 'College' : mode==='staff' ? 'Staff Anchor' : 'User Proximity'}</Text>
+                    </TouchableOpacity>
+                  ))}
                 </View>
+
+                {settings.locationMode==='staff' && (
+                  <View style={{ gap: 8 }}>
+                    <Text style={styles.muted}>Staff Anchor Location (lat,lon)</Text>
+                    {Platform.OS==='web' ? (
+                      <input value={`${settings.staffLocation?.latitude||''},${settings.staffLocation?.longitude||''}`} onChange={e=>{ const [lat,lon]=e.target.value.split(','); setSettings({ ...settings, staffLocation: { latitude: Number(lat), longitude: Number(lon) } }); }} style={styles.webInput} />
+                    ) : (
+                      <TextInput value={`${settings.staffLocation?.latitude||''},${settings.staffLocation?.longitude||''}`} onChangeText={t=>{ const [lat,lon]=t.split(','); setSettings({ ...settings, staffLocation: { latitude: Number(lat), longitude: Number(lon) } }); }} style={styles.input} placeholder="lat,lon" />
+                    )}
+                    <TouchableOpacity onPress={async()=>{
+                      try {
+                        const { status } = await Location.requestForegroundPermissionsAsync();
+                        if (status === 'granted') {
+                          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+                          setSettings({ ...settings, staffLocation: { latitude: loc.coords.latitude, longitude: loc.coords.longitude } });
+                        }
+                      } catch {}
+                    }} style={styles.secondaryBtn}><Text style={styles.secondaryBtnText}>Use My Current Location</Text></TouchableOpacity>
+                  </View>
+                )}
+
+                {settings.locationMode==='user' && (
+                  <View style={{ gap: 8 }}>
+                    <Text style={styles.muted}>Anchor Username/RegNo</Text>
+                    {Platform.OS==='web' ? (
+                      <input value={settings.proximityUsername||''} onChange={e=>setSettings({ ...settings, proximityUsername: e.target.value })} style={styles.webInput} />
+                    ) : (
+                      <TextInput value={settings.proximityUsername||''} onChangeText={t=>setSettings({ ...settings, proximityUsername: t })} style={styles.input} placeholder="username or reg no" />
+                    )}
+
+                    <Text style={styles.muted}>Radius (meters)</Text>
+                    {Platform.OS==='web' ? (
+                      <input type="number" value={settings.proximityRadiusMeters||100} onChange={e=>setSettings({ ...settings, proximityRadiusMeters: Number(e.target.value||'100') })} style={styles.webInput} />
+                    ) : (
+                      <TextInput value={String(settings.proximityRadiusMeters||100)} onChangeText={t=>setSettings({ ...settings, proximityRadiusMeters: Number(t||'100') })} style={styles.input} placeholder="100" />
+                    )}
+
+                    <Text style={styles.muted}>Anchor Location (lat,lon)</Text>
+                    {Platform.OS==='web' ? (
+                      <input value={`${settings.proximityLocation?.latitude||''},${settings.proximityLocation?.longitude||''}`} onChange={e=>{ const [lat,lon]=e.target.value.split(','); setSettings({ ...settings, proximityLocation: { latitude: Number(lat), longitude: Number(lon) } }); }} style={styles.webInput} />
+                    ) : (
+                      <TextInput value={`${settings.proximityLocation?.latitude||''},${settings.proximityLocation?.longitude||''}`} onChangeText={t=>{ const [lat,lon]=t.split(','); setSettings({ ...settings, proximityLocation: { latitude: Number(lat), longitude: Number(lon) } }); }} style={styles.input} placeholder="lat,lon" />
+                    )}
+                    <TouchableOpacity onPress={async()=>{
+                      try {
+                        const { status } = await Location.requestForegroundPermissionsAsync();
+                        if (status === 'granted') {
+                          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+                          setSettings({ ...settings, proximityLocation: { latitude: loc.coords.latitude, longitude: loc.coords.longitude }, proximityRadiusMeters: settings.proximityRadiusMeters || 100 });
+                        }
+                      } catch {}
+                    }} style={styles.secondaryBtn}><Text style={styles.secondaryBtnText}>Use My Current Location</Text></TouchableOpacity>
+
+                    <Text style={styles.hint}>Only users within the radius (default 100m) of this anchor will be marked present.</Text>
+                  </View>
+                )}
 
                 <TouchableOpacity onPress={saveSettings} style={styles.primaryBtn}><Text style={styles.primaryBtnText}>Save Settings</Text></TouchableOpacity>
               </View>
@@ -446,7 +526,7 @@ export default function AdminDashboard() {
         {tab === 'notifications' && (
           <Panel>
             <Text style={styles.panelTitle}>Notifications</Text>
-            <View style={styles.table}>
+            <TableContainer>
               <View style={styles.tableHeader}>
                 <Text style={[styles.th,{flex:2}]}>Time</Text>
                 <Text style={[styles.th,{flex:2}]}>Student</Text>
@@ -459,15 +539,16 @@ export default function AdminDashboard() {
                   <Text style={[styles.td,{flex:3}]}>{n.message}</Text>
                 </View>
               ))}
-            </View>
+            </TableContainer>
           </Panel>
         )}
+        </Panel>
       </ScrollView>
 
-      {/* Slide-in filter sidebar */}
+      {/* Slide-in filter sidebar (web optimized, mobile full-screen) */}
       {showFilters && (
-        <View style={styles.backdrop} onClick={() => setShowFilters(false)}>
-          <View style={styles.sidebar} onClick={(e) => e.stopPropagation()}>
+        <View style={styles.backdrop} onClick={() => Platform.OS==='web' && setShowFilters(false)}>
+          <View style={styles.sidebar} onClick={(e) => Platform.OS==='web' && e.stopPropagation()}>
             <View style={styles.sidebarHeader}>
               <Text style={styles.sidebarTitle}>Filters & Analytics</Text>
               <TouchableOpacity onPress={() => setShowFilters(false)} style={styles.closeBtn}>
@@ -548,7 +629,7 @@ export default function AdminDashboard() {
           </View>
         </View>
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -556,9 +637,9 @@ const styles = StyleSheet.create({
   fill: { flex: 1 },
   bg: Platform.select({
     web: {
-      backgroundImage: 'linear-gradient(135deg, #ecf2ff 0%, #eafaf6 50%, #fef3f7 100%)',
+      backgroundImage: 'linear-gradient(135deg, #f5f3ff 0%, #f3e8ff 50%, #fce7f3 100%)',
     },
-    default: { backgroundColor: '#eef2ff' },
+    default: { backgroundColor: '#f5f3ff' },
   }),
 
   topBar: {
@@ -568,13 +649,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  brand: { fontSize: 20, fontWeight: '800', color: '#0f172a' },
-  navRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  navItem: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 10, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.6)' },
-  navItemActive: { backgroundColor: 'rgba(255,255,255,0.85)' },
-  navLabel: { color: '#334155', fontWeight: '700' },
-  navLabelActive: { color: '#0f172a' },
-  logout: { flexDirection:'row', alignItems:'center', gap:6, paddingVertical:8, paddingHorizontal:10, borderRadius:10, backgroundColor:'rgba(255,255,255,0.6)' },
+  brand: { fontSize: 20, fontWeight: '800', color: '#3b0764' },
+  navRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 18, flexWrap: 'wrap' },
+  navTab: { alignItems: 'center' },
+  navTabText: { color: '#6b21a8', fontWeight: '800', fontSize: 14 },
+  navTabTextActive: { color: '#3b0764' },
+  navUnderline: { height: 2, width: '100%', backgroundColor: 'transparent', marginTop: 4, borderRadius: 9999 },
+  navUnderlineActive: { backgroundColor: '#7c3aed' },
+  logout: { flexDirection:'row', alignItems:'center', gap:6, paddingVertical:4, paddingHorizontal:6, borderRadius:6 },
 
   page: { flexGrow: 1, padding: 16, gap: 16 },
   grid: { width: '100%', gap: 16 },
@@ -586,9 +668,10 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: 16,
     padding: 16,
-    backgroundColor: 'rgba(255,255,255,0.6)',
-    ...Platform.select({ web: { boxShadow: '0 8px 30px rgba(2, 6, 23, 0.08)' }, default: {} }),
+    backgroundColor: 'rgba(255,255,255,0.75)',
+    ...Platform.select({ web: { boxShadow: '0 12px 30px rgba(91, 33, 182, 0.08)', border: '1px solid #eadcff' }, default: {} }),
   },
+  contentBox: { padding: 12 },
 
   panelTitle: { fontSize: 16, fontWeight: '800', color: '#0f172a', marginBottom: 10 },
   muted: { color: '#475569' },
@@ -637,8 +720,8 @@ const styles = StyleSheet.create({
   td: { color:'#0f172a' },
 
   // Sidebar (filters)
-  backdrop: { position:'fixed', top:0, left:0, right:0, bottom:0, backgroundColor:'rgba(15,23,42,0.4)', zIndex:1000 },
-  sidebar: { position:'absolute', right:0, top:0, height:'100vh', width:380, backgroundColor:'#ffffff', boxShadow:'-4px 0 24px rgba(2,6,23,0.1)' },
+  backdrop: Platform.select({ web: { position:'fixed', top:0, left:0, right:0, bottom:0, backgroundColor:'rgba(15,23,42,0.4)', zIndex:1000 }, default: { position:'absolute', top:0, left:0, right:0, bottom:0, backgroundColor:'rgba(15,23,42,0.4)', zIndex:1000 } }),
+  sidebar: Platform.select({ web: { position:'absolute', right:0, top:0, height:'100vh', width:380, backgroundColor:'#ffffff', boxShadow:'-4px 0 24px rgba(2,6,23,0.1)' }, default: { position:'absolute', left:0, right:0, top:0, bottom:0, backgroundColor:'#ffffff' } }),
   foldHandle: { position:'absolute', left:-24, top:'50%', marginTop:-20, width:24, height:40, borderTopLeftRadius:4, borderBottomLeftRadius:4, backgroundColor:'#64748b', alignItems:'center', justifyContent:'center' },
   sidebarHeader: { flexDirection:'row', justifyContent:'space-between', alignItems:'center', padding:16, borderBottomWidth:1, borderBottomColor:'#e5e7eb', backgroundColor:'#f8fafc' },
   sidebarTitle: { fontSize:18, fontWeight:'800', color:'#0f172a' },
