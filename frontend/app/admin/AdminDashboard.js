@@ -637,9 +637,9 @@ const styles = StyleSheet.create({
   fill: { flex: 1 },
   bg: Platform.select({
     web: {
-      backgroundImage: 'linear-gradient(135deg, #f5f3ff 0%, #f3e8ff 50%, #fce7f3 100%)',
+      backgroundImage: 'linear-gradient(135deg, #cf49caff 0%, #cd52d5ff 50%, #c82fdfff 100%)',
     },
-    default: { backgroundColor: '#f5f3ff' },
+    default: { backgroundColor: '#c92cd7ff' },
   }),
 
   topBar: {
@@ -668,7 +668,7 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: 16,
     padding: 16,
-    backgroundColor: 'rgba(141, 61, 161, 0.75)',
+    backgroundColor: 'rgba(136, 80, 150, 0.75)',
     ...Platform.select({ web: { boxShadow: '0 12px 30px rgba(91, 33, 182, 0.08)', border: '1px solid #eadcff' }, default: {} }),
   },
   contentBox: { padding: 12 },
