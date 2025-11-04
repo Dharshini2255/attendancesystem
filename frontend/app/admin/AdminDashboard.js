@@ -669,7 +669,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 16,
     backgroundColor: 'rgba(104, 100, 100, 0.75)',
-    ...Platform.select({ web: { boxShadow: '0 12px 30px rgba(91, 33, 182, 0.08)', border: '1px solid #eadcff' }, default: {} }),
+    ...Platform.select({ web: { boxShadow: '0 12px 30px rgba(91, 33, 182, 0.08)', border: '1px solid #796e6aff' }, default: {} }),
   },
   contentBox: { padding: 12 },
 
@@ -710,7 +710,7 @@ const styles = StyleSheet.create({
   segmentLabel: { color:'#0f172a', fontWeight:'700' },
 
   input: { padding: 10, backgroundColor:'rgba(255, 255, 255, 1), 0.8)', borderRadius: 10, color:'#0f172a' },
-  webInput: { padding: 10, background: 'rgba(0, 0, 0, 0.8)', borderRadius: 10, border: '1px solid rgba(148,163,184,0.35)' },
+  webInput: { padding: 10, background: 'rgba(255, 255, 255, 1)', borderRadius: 10, border: '1px solid rgba(148,163,184,0.35)' },
 
   // Table styles
   table: { width:'100%', borderRadius: 12, overflow:'hidden', ...Platform.select({ web: { border: '1px solid rgba(148,163,184,0.35)' }, default: {} }) },
