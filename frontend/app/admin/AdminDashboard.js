@@ -16,6 +16,7 @@ export default function AdminDashboard() {
   const [pings, setPings] = useState([]);
   const [sessions, setSessions] = useState({ loggedIn: [], loggedOut: [], total: 0 });
   const [ctrl, setCtrl] = useState({ pingEnabled: false, intervalMs: 60000 });
+  const [attendanceView, setAttendanceView] = useState('users');
 
   const [from, setFrom] = useState(new Date().toLocaleDateString('en-CA'));
   const [to, setTo] = useState(new Date().toLocaleDateString('en-CA'));
@@ -140,6 +141,35 @@ export default function AdminDashboard() {
     return total ? Math.round((present / total) * 100) : 0;
   }, [attRows]);
 
+  const usersByReg = useMemo(() => { const m = {}; (users||[]).forEach(u => { if (u?.regNo) m[u.regNo] = u; }); return m; }, [users]);
+  const recentPings = useMemo(() => (pings||[]).filter(p => {
+    const t = new Date(p.timestamp).getTime();
+    return !isNaN(t) && (Date.now() - t) <= 30*60*1000;
+  }), [pings]);
+  const metrics = useMemo(() => {
+    const seenStudents = new Set();
+    const seenClasses = new Set();
+    let biometric = 0;
+    for (const p of recentPings) {
+      const key = p.studentId || `${p.studentName||''}:${p.regNo||''}`;
+      if (key) seenStudents.add(key);
+      const u = p.regNo && usersByReg[p.regNo];
+      const cls = p.class || p.className || u?.class;
+      if (cls) seenClasses.add(cls);
+      if (p.biometricVerified) biometric += 1;
+    }
+    return { activeStudents: seenStudents.size, activeClasses: seenClasses.size, biometric };
+  }, [recentPings, usersByReg]);
+
+  const departmentOptions = useMemo(() => {
+    const vals = Array.from(new Set((users||[]).map(u=>u.department).filter(Boolean)));
+    return vals.length ? vals : ['CSE','ECE','EEE','IT','MECH','CIVIL'];
+  }, [users]);
+  const classOptions = useMemo(() => {
+    const vals = Array.from(new Set((users||[]).map(u=>u.class).filter(Boolean)));
+    return vals.length ? vals : ['CSE-A','CSE-B','ECE-A','EEE-A','IT-A'];
+  }, [users]);
+
   if (!authorized) {
     return <View style={[styles.fill, styles.bg]}><Text style={{ color: '#1f2937' }}>Checking admin access…</Text></View>;
   }
@@ -176,22 +206,15 @@ export default function AdminDashboard() {
         {tab === 'dashboard' && (
           <View style={styles.grid}>
             {/* Left: Attendance Setup */}
-            <Panel style={styles.leftCol}>
-              <Text style={styles.panelTitle}>Attendance Setup</Text>
-              <View style={styles.rowBetween}><Text style={styles.muted}>Day</Text><Text style={styles.value}>{settings.day || '—'}</Text></View>
-              <View style={styles.rowBetween}><Text style={styles.muted}>Date</Text><Text style={styles.value}>{settings.date}</Text></View>
-              <View style={styles.rowBetween}><Text style={styles.muted}>Start</Text><Text style={styles.value}>{settings.startTime}</Text></View>
-              <View style={styles.rowBetween}><Text style={styles.muted}>End</Text><Text style={styles.value}>{settings.endTime}</Text></View>
-              <View style={[styles.rowBetween,{marginTop:8}]}> 
-                <Text style={styles.muted}>College Location</Text>
-                <Switch value={settings.locationMode==='college'} onValueChange={(v)=>setSettings({...settings, locationMode: v?'college':'staff'})} />
-              </View>
-              <TouchableOpacity onPress={saveSettings} style={styles.primaryBtn}><Text style={styles.primaryBtnText}>Save</Text></TouchableOpacity>
-            </Panel>
 
             {/* Center: Map / Overview */}
             <Panel style={styles.centerCol}>
               <Text style={styles.panelTitle}>Real-time Attendance Overview</Text>
+              <View style={styles.metricsRow}>
+                <View style={styles.metricChip}><Text style={styles.metricNum}>{metrics.activeStudents}</Text><Text style={styles.metricLabel}>Active Students (30m)</Text></View>
+                <View style={styles.metricChip}><Text style={styles.metricNum}>{metrics.activeClasses}</Text><Text style={styles.metricLabel}>Active Classes</Text></View>
+                <View style={styles.metricChip}><Text style={styles.metricNum}>{metrics.biometric}</Text><Text style={styles.metricLabel}>Biometric Pings</Text></View>
+              </View>
               <View style={styles.mapWrap}>
                 <Image source={{ uri: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/80/World_map_-_low_resolution.svg/1024px-World_map_-_low_resolution.svg.png' }} contentFit="contain" style={{ width: '100%', height: '100%' }} />
               </View>
@@ -285,68 +308,79 @@ export default function AdminDashboard() {
 
         {tab === 'attendance' && (
           <View style={{ width: '100%', gap: 16 }}>
-            <Panel>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-                <Text style={styles.panelTitle}>Users</Text>
-                <TouchableOpacity onPress={exportUsers}><Text style={styles.link}>Export CSV</Text></TouchableOpacity>
-              </View>
-              <View style={styles.table}>
-                <View style={styles.tableHeader}>
-                  <Text style={[styles.th, { flex: 2 }]}>Name</Text>
-                  <Text style={[styles.th, { flex: 1.5 }]}>Reg No</Text>
-                  <Text style={[styles.th, { flex: 1 }]}>Class</Text>
-                  <Text style={[styles.th, { flex: 0.8 }]}>Year</Text>
-                  <Text style={[styles.th, { flex: 2.5 }]}>Email</Text>
-                  <Text style={[styles.th, { flex: 1.5 }]}>Username</Text>
-                </View>
-                {users.map((u, i) => (
-                  <View key={u._id || i} style={styles.tableRow}>
-                    <Text style={[styles.td, { flex: 2 }]}>{u.name}</Text>
-                    <Text style={[styles.td, { flex: 1.5 }]}>{u.regNo}</Text>
-                    <Text style={[styles.td, { flex: 1 }]}>{u.class}</Text>
-                    <Text style={[styles.td, { flex: 0.8 }]}>{u.year}</Text>
-                    <Text style={[styles.td, { flex: 2.5 }]}>{u.email}</Text>
-                    <Text style={[styles.td, { flex: 1.5 }]}>{u.username}</Text>
-                  </View>
-                ))}
-              </View>
-            </Panel>
+            <View style={styles.segmentRow}>
+              <TouchableOpacity onPress={()=>setAttendanceView('users')} style={[styles.segmentBtn, attendanceView==='users' && styles.segmentActive]}>
+                <Text style={styles.segmentLabel}>Users</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={()=>setAttendanceView('attendance')} style={[styles.segmentBtn, attendanceView==='attendance' && styles.segmentActive]}>
+                <Text style={styles.segmentLabel}>Attendance</Text>
+              </TouchableOpacity>
+            </View>
 
-            <Panel>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-                <Text style={styles.panelTitle}>Attendance</Text>
-                <TouchableOpacity onPress={exportAttendance}><Text style={styles.link}>Export CSV</Text></TouchableOpacity>
-              </View>
-              <View style={styles.table}>
-                <View style={styles.tableHeader}>
-                  <Text style={[styles.th, { flex: 1.5 }]}>{granularity==='day' ? 'Date' : 'Bucket'}</Text>
-                  <Text style={[styles.th, { flex: 2 }]}>Name</Text>
-                  <Text style={[styles.th, { flex: 1.5 }]}>Reg No</Text>
-                  <Text style={[styles.th, { flex: 2 }]}>Details</Text>
+            {attendanceView==='users' ? (
+              <Panel>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <Text style={styles.panelTitle}>Users</Text>
+                  <TouchableOpacity onPress={exportUsers}><Text style={styles.link}>Export CSV</Text></TouchableOpacity>
                 </View>
-                {attRows.map((r, i) => (
-                  <View key={i} style={styles.tableRow}>
-                    <Text style={[styles.td, { flex: 1.5 }]}>{r.date || r.bucket}</Text>
-                    <TouchableOpacity style={{ flex: 2 }} onPress={async () => {
-                      try {
-                        const params = new URLSearchParams({ from: from, to: to });
-                        const res = await fetch(`${api}/admin/student/${encodeURIComponent(r.studentId)}/history?${params}`);
-                        const detail = await res.json();
-                        alert(JSON.stringify(detail, null, 2));
-                      } catch {}
-                    }}>
-                      <Text style={[styles.td, { color:'#2563eb', textDecorationLine:'underline' }]}>{r.studentName}</Text>
-                    </TouchableOpacity>
-                    <Text style={[styles.td, { flex: 1.5 }]}>{r.regNo}</Text>
-                    {r.periodNumber != null ? (
-                      <Text style={[styles.td, { flex: 2 }]}>P{r.periodNumber} - {r.status}</Text>
-                    ) : (
-                      <Text style={[styles.td, { flex: 2 }]}>Present: {r.present} | Absent: {r.absent}</Text>
-                    )}
+                <View style={styles.table}>
+                  <View style={styles.tableHeader}>
+                    <Text style={[styles.th, { flex: 2 }]}>Name</Text>
+                    <Text style={[styles.th, { flex: 1.5 }]}>Reg No</Text>
+                    <Text style={[styles.th, { flex: 1 }]}>Class</Text>
+                    <Text style={[styles.th, { flex: 0.8 }]}>Year</Text>
+                    <Text style={[styles.th, { flex: 2.5 }]}>Email</Text>
+                    <Text style={[styles.th, { flex: 1.5 }]}>Username</Text>
                   </View>
-                ))}
-              </View>
-            </Panel>
+                  {users.map((u, i) => (
+                    <View key={u._id || i} style={styles.tableRow}>
+                      <Text style={[styles.td, { flex: 2 }]}>{u.name}</Text>
+                      <Text style={[styles.td, { flex: 1.5 }]}>{u.regNo}</Text>
+                      <Text style={[styles.td, { flex: 1 }]}>{u.class}</Text>
+                      <Text style={[styles.td, { flex: 0.8 }]}>{u.year}</Text>
+                      <Text style={[styles.td, { flex: 2.5 }]}>{u.email}</Text>
+                      <Text style={[styles.td, { flex: 1.5 }]}>{u.username}</Text>
+                    </View>
+                  ))}
+                </View>
+              </Panel>
+            ) : (
+              <Panel>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <Text style={styles.panelTitle}>Attendance</Text>
+                  <TouchableOpacity onPress={exportAttendance}><Text style={styles.link}>Export CSV</Text></TouchableOpacity>
+                </View>
+                <View style={styles.table}>
+                  <View style={styles.tableHeader}>
+                    <Text style={[styles.th, { flex: 1.5 }]}>{granularity==='day' ? 'Date' : 'Bucket'}</Text>
+                    <Text style={[styles.th, { flex: 2 }]}>Name</Text>
+                    <Text style={[styles.th, { flex: 1.5 }]}>Reg No</Text>
+                    <Text style={[styles.th, { flex: 2 }]}>Details</Text>
+                  </View>
+                  {attRows.map((r, i) => (
+                    <View key={i} style={styles.tableRow}>
+                      <Text style={[styles.td, { flex: 1.5 }]}>{r.date || r.bucket}</Text>
+                      <TouchableOpacity style={{ flex: 2 }} onPress={async () => {
+                        try {
+                          const params = new URLSearchParams({ from: from, to: to });
+                          const res = await fetch(`${api}/admin/student/${encodeURIComponent(r.studentId)}/history?${params}`);
+                          const detail = await res.json();
+                          alert(JSON.stringify(detail, null, 2));
+                        } catch {}
+                      }}>
+                        <Text style={[styles.td, { color:'#2563eb', textDecorationLine:'underline' }]}>{r.studentName}</Text>
+                      </TouchableOpacity>
+                      <Text style={[styles.td, { flex: 1.5 }]}>{r.regNo}</Text>
+                      {r.periodNumber != null ? (
+                        <Text style={[styles.td, { flex: 2 }]}>P{r.periodNumber} - {r.status}</Text>
+                      ) : (
+                        <Text style={[styles.td, { flex: 2 }]}>Present: {r.present} | Absent: {r.absent}</Text>
+                      )}
+                    </View>
+                  ))}
+                </View>
+              </Panel>
+            )}
           </View>
         )}
 
@@ -363,24 +397,39 @@ export default function AdminDashboard() {
                 )}
 
                 <Text style={styles.muted}>Day</Text>
+                <View style={styles.segmentRow}>
+                  {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d => (
+                    <TouchableOpacity key={d} onPress={()=>setSettings({...settings, day:d})} style={[styles.segmentBtn, settings.day===d && styles.segmentActive]}>
+                      <Text style={styles.segmentLabel}>{d}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <Text style={styles.muted}>Department</Text>
                 {Platform.OS==='web' ? (
-                  <input value={settings.day||''} onChange={e=>setSettings({ ...settings, day: e.target.value })} style={styles.webInput} />
+                  <select value={settings.department||''} onChange={e=>setSettings({ ...settings, department: e.target.value })} style={styles.webInput}>
+                    {departmentOptions.map(opt=> <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
                 ) : (
-                  <TextInput value={settings.day} onChangeText={t=>setSettings({...settings, day:t})} style={styles.input} placeholder="Mon/Tue…" />
+                  <TextInput value={settings.department||''} onChangeText={t=>setSettings({...settings, department:t})} style={styles.input} placeholder="Department" />
                 )}
 
-                <Text style={styles.muted}>Start Time</Text>
+                <Text style={styles.muted}>Class</Text>
                 {Platform.OS==='web' ? (
-                  <input type="time" value={settings.startTime||''} onChange={e=>setSettings({ ...settings, startTime: e.target.value })} style={styles.webInput} />
+                  <select value={settings.class||''} onChange={e=>setSettings({ ...settings, class: e.target.value })} style={styles.webInput}>
+                    {classOptions.map(opt=> <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
                 ) : (
-                  <TextInput value={settings.startTime} onChangeText={t=>setSettings({...settings, startTime:t})} style={styles.input} placeholder="HH:mm" />
+                  <TextInput value={settings.class||''} onChangeText={t=>setSettings({...settings, class:t})} style={styles.input} placeholder="e.g., CSE-A" />
                 )}
 
-                <Text style={styles.muted}>End Time</Text>
+                <Text style={styles.muted}>Year</Text>
                 {Platform.OS==='web' ? (
-                  <input type="time" value={settings.endTime||''} onChange={e=>setSettings({ ...settings, endTime: e.target.value })} style={styles.webInput} />
+                  <select value={String(settings.year||'')} onChange={e=>setSettings({ ...settings, year: Number(e.target.value) })} style={styles.webInput}>
+                    {[1,2,3,4].map(y=> <option key={y} value={y}>{y}</option>)}
+                  </select>
                 ) : (
-                  <TextInput value={settings.endTime} onChangeText={t=>setSettings({...settings, endTime:t})} style={styles.input} placeholder="HH:mm" />
+                  <TextInput value={String(settings.year||'')} onChangeText={t=>setSettings({...settings, year: Number(t||0)})} style={styles.input} placeholder="1-4" />
                 )}
 
                 <View style={styles.rowBetween}>
@@ -556,6 +605,11 @@ const styles = StyleSheet.create({
   legendDot: { width: 10, height: 10, borderRadius: 5 },
   legendText: { color: '#334155' },
 
+  metricsRow: { flexDirection:'row', gap: 10, flexWrap:'wrap', marginBottom: 10 },
+  metricChip: { paddingVertical:8, paddingHorizontal:12, backgroundColor:'rgba(255,255,255,0.7)', borderRadius: 9999 },
+  metricNum: { fontWeight:'800', color:'#0f172a' },
+  metricLabel: { color:'#475569' },
+
   noticeItem: { padding: 10, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.7)' },
   noticeTime: { fontSize: 12, color: '#64748b', marginBottom: 4 },
   noticeMsg: { color: '#0f172a' },
@@ -566,6 +620,11 @@ const styles = StyleSheet.create({
   gaugeText: { fontWeight:'800', color:'#0f172a' },
   donutRow: { flexDirection:'row', gap: 12 },
   donut: { width: 40, height: 40, borderRadius: 20, borderWidth: 6, backgroundColor:'transparent' },
+
+  segmentRow: { flexDirection:'row', gap: 8, flexWrap:'wrap' },
+  segmentBtn: { paddingVertical:6, paddingHorizontal:12, borderRadius: 9999, backgroundColor:'rgba(255,255,255,0.6)' },
+  segmentActive: { backgroundColor:'rgba(255,255,255,0.9)' },
+  segmentLabel: { color:'#0f172a', fontWeight:'700' },
 
   input: { padding: 10, backgroundColor:'rgba(255,255,255,0.8)', borderRadius: 10, color:'#0f172a' },
   webInput: { padding: 10, background: 'rgba(255,255,255,0.8)', borderRadius: 10, border: '1px solid rgba(148,163,184,0.35)' },
