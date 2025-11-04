@@ -715,9 +715,9 @@ const styles = StyleSheet.create({
   value: { color: '#0f172a', fontWeight: '700' },
   rowBetween: { flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginTop: 4 },
   primaryBtn: { marginTop: 12, backgroundColor: '#60a5fa', paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
-  primaryBtnText: { color: '#0f172a', fontWeight: '800' },
+  primaryBtnText: { color: '#0f172a', fontWeight: '400' },
   secondaryBtn: { backgroundColor: 'rgba(96,165,250,0.15)', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 8, marginTop: 6 },
-  secondaryBtnText: { color: '#000000ff', fontWeight: '700' },
+  secondaryBtnText: { color: '#000000ff', fontWeight: '400' },
   link: { color: '#000000ff', fontWeight: '700', textDecorationLine: 'underline' },
 
   mapWrap: { height: 200, borderRadius: 12, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.6)' },
