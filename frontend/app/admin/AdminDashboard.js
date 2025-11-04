@@ -209,16 +209,29 @@ export default function AdminDashboard() {
       {/* Top nav */}
       <View style={styles.topBar}>
         <Text style={styles.brand}>Admin Dashboard</Text>
-        <View style={[styles.navRow, isSmall && styles.navRowSmall]}>
-          <NavItem big={isSmall} active={tab==='dashboard'} label="Dashboard" onPress={() => { setTab('dashboard'); loadPings(); loadNotifications(); }} />
-          <NavItem active={tab==='settings'} label="Settings" onPress={() => { setTab('settings'); readSettings(); }} />
-          <NavItem active={tab==='attendance'} label="Attendance" onPress={() => { setTab('attendance'); loadAttendance(); }} />
-          <NavItem active={tab==='notifications'} label="Notifications" onPress={() => { setTab('notifications'); loadNotifications(); }} />
-          <TouchableOpacity onPress={async () => { await AsyncStorage.removeItem('adminAuth'); router.replace('/home'); }} style={styles.logout}>
-            <Ionicons name="log-out-outline" size={18} color="#0f766e" />
-            <Text style={styles.navTabText}>Logout</Text>
-          </TouchableOpacity>
-        </View>
+        {Platform.OS === 'web' ? (
+          <View style={[styles.navRow, isSmall && styles.navRowSmall]}>
+            <NavItem big={isSmall} active={tab==='dashboard'} label="Dashboard" onPress={() => { setTab('dashboard'); loadPings(); loadNotifications(); }} />
+            <NavItem active={tab==='settings'} label="Settings" onPress={() => { setTab('settings'); readSettings(); }} />
+            <NavItem active={tab==='attendance'} label="Attendance" onPress={() => { setTab('attendance'); loadAttendance(); }} />
+            <NavItem active={tab==='notifications'} label="Notifications" onPress={() => { setTab('notifications'); loadNotifications(); }} />
+            <TouchableOpacity onPress={async () => { await AsyncStorage.removeItem('adminAuth'); router.replace('/home'); }} style={styles.logout}>
+              <Ionicons name="log-out-outline" size={18} color="#0f766e" />
+              <Text style={styles.navTabText}>Logout</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.navRowMobile}>
+            <NavItem active={tab==='dashboard'} label="Dashboard" onPress={() => { setTab('dashboard'); loadPings(); loadNotifications(); }} />
+            <NavItem active={tab==='settings'} label="Settings" onPress={() => { setTab('settings'); readSettings(); }} />
+            <NavItem active={tab==='attendance'} label="Attendance" onPress={() => { setTab('attendance'); loadAttendance(); }} />
+            <NavItem active={tab==='notifications'} label="Notifications" onPress={() => { setTab('notifications'); loadNotifications(); }} />
+            <TouchableOpacity onPress={async () => { await AsyncStorage.removeItem('adminAuth'); router.replace('/home'); }} style={styles.logout}>
+              <Ionicons name="log-out-outline" size={18} color="#0f766e" />
+              <Text style={styles.navTabText}>Logout</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        )}
       </View>
 
       <ScrollView contentContainerStyle={styles.page}>
@@ -469,20 +482,16 @@ export default function AdminDashboard() {
                 </View>
                 <Text style={styles.muted}>Department</Text>
                 {Platform.OS==='web' ? (
-                  <select value={settings.department||''} onChange={e=>setSettings({ ...settings, department: e.target.value })} style={styles.webInput}>
-                    {departmentOptions.map(opt=> <option key={opt} value={opt}>{opt}</option>)}
-                  </select>
+                  <input value={settings.department||''} onChange={e=>setSettings({ ...settings, department: e.target.value })} style={styles.webInput} placeholder="Department" />
                 ) : (
                   <TextInput value={settings.department||''} onChangeText={t=>setSettings({...settings, department:t})} style={styles.input} placeholder="Department" />
                 )}
 
-                <Text style={styles.muted}>Class (5 per department)</Text>
+                <Text style={styles.muted}>Class</Text>
                 {Platform.OS==='web' ? (
-                  <select value={settings.class||''} onChange={e=>setSettings({ ...settings, class: e.target.value })} style={styles.webInput}>
-                    {classOptions.map(opt=> <option key={opt} value={opt}>{opt}</option>)}
-                  </select>
+                  <input value={settings.class||''} onChange={e=>setSettings({ ...settings, class: e.target.value })} style={styles.webInput} placeholder="e.g., CSE-A" />
                 ) : (
-                  <TextInput value={settings.class||''} onChangeText={t=>setSettings({...settings, class:t})} style={styles.input} placeholder="e.g., CSE-A … CSE-E" />
+                  <TextInput value={settings.class||''} onChangeText={t=>setSettings({...settings, class:t})} style={styles.input} placeholder="e.g., CSE-A" />
                 )}
 
                 <Text style={styles.muted}>Year</Text>
@@ -495,42 +504,69 @@ export default function AdminDashboard() {
                 )}
 
                 <Text style={styles.muted}>Location Options</Text>
-                <View style={{ gap: 8 }}>
+                <View style={{ gap: 12 }}>
                   <View style={styles.rowBetween}>
                     <Text style={styles.muted}>Use College Location</Text>
                     <TouchableOpacity onPress={()=>setSettings({ ...settings, useCollegeLocation: !settings.useCollegeLocation })} style={[styles.segmentBtn, settings.useCollegeLocation && styles.segmentActive]}>
                       <Text style={styles.segmentLabel}>{settings.useCollegeLocation ? 'On' : 'Off'}</Text>
                     </TouchableOpacity>
                   </View>
-                  <View style={{ gap: 6 }}>
-                    <Text style={styles.muted}>Additional Live Location</Text>
-                    {Platform.OS==='web' ? (
-                      <input value={`${settings.proximityLocation?.latitude||''},${settings.proximityLocation?.longitude||''}`} onChange={e=>{ const [lat,lon]=e.target.value.split(','); setSettings({ ...settings, proximityLocation: { latitude: Number(lat), longitude: Number(lon) } }); }} style={styles.webInput} />
-                    ) : (
-                      <TextInput value={`${settings.proximityLocation?.latitude||''},${settings.proximityLocation?.longitude||''}`} onChangeText={t=>{ const [lat,lon]=t.split(','); setSettings({ ...settings, proximityLocation: { latitude: Number(lat), longitude: Number(lon) } }); }} style={styles.input} placeholder="lat,lon" />
-                    )}
-                    <TouchableOpacity onPress={async()=>{
-                      try {
-                        const { status } = await Location.requestForegroundPermissionsAsync();
-                        if (status === 'granted') {
-                          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-                          setSettings({ ...settings, proximityLocation: { latitude: loc.coords.latitude, longitude: loc.coords.longitude }, proximityRadiusMeters: settings.proximityRadiusMeters || 100 });
-                        }
-                      } catch {}
-                    }} style={styles.secondaryBtn}><Text style={styles.secondaryBtnText}>Use My Current Location</Text></TouchableOpacity>
-                    <View style={styles.segmentRow}>
-                      {[100,200].map(r => (
-                        Platform.OS==='web' ? (
-                          <button key={r} onClick={()=>setSettings({ ...settings, proximityRadiusMeters: r })} style={{ padding: 8, borderRadius: 8, border: '1px solid #ccfbf1', background: (settings.proximityRadiusMeters||100)===r ? '#99f6e4' : 'transparent' }}>{r} m</button>
-                        ) : (
-                          <TouchableOpacity key={r} onPress={()=>setSettings({ ...settings, proximityRadiusMeters: r })} style={[styles.segmentBtn, (settings.proximityRadiusMeters||100)===r && styles.segmentActive]}>
-                            <Text style={styles.segmentLabel}>{r} m</Text>
-                          </TouchableOpacity>
-                        )
-                      ))}
-                    </View>
-                    <Text style={styles.hint}>Students within {String(settings.proximityRadiusMeters||100)}m of this additional anchor will count present.</Text>
+
+                  <Text style={styles.muted}>College Polygon (up to 4 lines: lat,lon)</Text>
+                  {Platform.OS==='web' ? (
+                    <textarea rows={4} value={(settings.collegePolygon||[]).map(p=>`${p.latitude||''},${p.longitude||''}`).join('\n')} onChange={e=>{
+                      const lines = e.target.value.split(/\n+/).map(s=>s.trim()).filter(Boolean).slice(0,4);
+                      const pts = lines.map(l=>{ const [a,b]=l.split(','); return { latitude: Number(a), longitude: Number(b) }; });
+                      setSettings({ ...settings, collegePolygon: pts });
+                    }} style={{ ...styles.webInput, minHeight: 100 }} />
+                  ) : (
+                    <TextInput multiline value={(settings.collegePolygon||[]).map(p=>`${p.latitude||''},${p.longitude||''}`).join('\n')} onChangeText={t=>{
+                      const lines = t.split(/\n+/).map(s=>s.trim()).filter(Boolean).slice(0,4);
+                      const pts = lines.map(l=>{ const [a,b]=l.split(','); return { latitude: Number(a), longitude: Number(b) }; });
+                      setSettings({ ...settings, collegePolygon: pts });
+                    }} style={styles.input} placeholder={'lat,lon\nlat,lon\n...'} />
+                  )}
+
+                  <Text style={styles.muted}>Additional Live Locations (one per line: username,lat,lon,radius)</Text>
+                  {Platform.OS==='web' ? (
+                    <textarea rows={4} value={(settings.proximityAnchors||[]).map(a=>`${a.username||''},${a.location?.latitude||''},${a.location?.longitude||''},${a.radiusMeters||100}`).join('\n')} onChange={e=>{
+                      const anchors = e.target.value.split(/\n+/).map(s=>s.trim()).filter(Boolean).map(l=>{ const [u,la,lo,r]=l.split(','); return { username: u||'', location: { latitude: Number(la), longitude: Number(lo) }, radiusMeters: Number(r||100) }; });
+                      setSettings({ ...settings, proximityAnchors: anchors });
+                    }} style={{ ...styles.webInput, minHeight: 100 }} />
+                  ) : (
+                    <TextInput multiline value={(settings.proximityAnchors||[]).map(a=>`${a.username||''},${a.location?.latitude||''},${a.location?.longitude||''},${a.radiusMeters||100}`).join('\n')} onChangeText={t=>{
+                      const anchors = t.split(/\n+/).map(s=>s.trim()).filter(Boolean).map(l=>{ const [u,la,lo,r]=l.split(','); return { username: u||'', location: { latitude: Number(la), longitude: Number(lo) }, radiusMeters: Number(r||100) }; });
+                      setSettings({ ...settings, proximityAnchors: anchors });
+                    }} style={styles.input} placeholder={'user1,lat,lon,100\nuser2,lat,lon,200'} />
+                  )}
+
+                  <Text style={styles.muted}>Single Live Anchor (optional)</Text>
+                  {Platform.OS==='web' ? (
+                    <input value={`${settings.proximityLocation?.latitude||''},${settings.proximityLocation?.longitude||''}`} onChange={e=>{ const [lat,lon]=e.target.value.split(','); setSettings({ ...settings, proximityLocation: { latitude: Number(lat), longitude: Number(lon) } }); }} style={styles.webInput} />
+                  ) : (
+                    <TextInput value={`${settings.proximityLocation?.latitude||''},${settings.proximityLocation?.longitude||''}`} onChangeText={t=>{ const [lat,lon]=t.split(','); setSettings({ ...settings, proximityLocation: { latitude: Number(lat), longitude: Number(lon) } }); }} style={styles.input} placeholder="lat,lon" />
+                  )}
+                  <TouchableOpacity onPress={async()=>{
+                    try {
+                      const { status } = await Location.requestForegroundPermissionsAsync();
+                      if (status === 'granted') {
+                        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+                        setSettings({ ...settings, proximityLocation: { latitude: loc.coords.latitude, longitude: loc.coords.longitude }, proximityRadiusMeters: settings.proximityRadiusMeters || 100 });
+                      }
+                    } catch {}
+                  }} style={styles.secondaryBtn}><Text style={styles.secondaryBtnText}>Use My Current Location</Text></TouchableOpacity>
+                  <View style={styles.segmentRow}>
+                    {[100,200].map(r => (
+                      Platform.OS==='web' ? (
+                        <button key={r} onClick={()=>setSettings({ ...settings, proximityRadiusMeters: r })} style={{ padding: 8, borderRadius: 8, border: '1px solid #ccfbf1', background: (settings.proximityRadiusMeters||100)===r ? '#99f6e4' : 'transparent' }}>{r} m</button>
+                      ) : (
+                        <TouchableOpacity key={r} onPress={()=>setSettings({ ...settings, proximityRadiusMeters: r })} style={[styles.segmentBtn, (settings.proximityRadiusMeters||100)===r && styles.segmentActive]}>
+                          <Text style={styles.segmentLabel}>{r} m</Text>
+                        </TouchableOpacity>
+                      )
+                    ))}
                   </View>
+                  <Text style={styles.hint}>Students within {String(settings.proximityRadiusMeters||100)}m of any live or single anchor will count present.</Text>
                 </View>
 
                 <Text style={styles.muted}>Pings required for Present (per period)</Text>
@@ -541,6 +577,54 @@ export default function AdminDashboard() {
                     </TouchableOpacity>
                   ))}
                 </View>
+
+                <Text style={styles.muted}>Biometric trigger mode</Text>
+                <View style={styles.segmentRow}>
+                  {['pingNumber','time','period'].map(m => (
+                    <TouchableOpacity key={m} onPress={()=>setSettings({ ...settings, biometricTriggerMode: m })} style={[styles.segmentBtn, (settings.biometricTriggerMode||'pingNumber')===m && styles.segmentActive]}>
+                      <Text style={styles.segmentLabel}>{m}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {(settings.biometricTriggerMode||'pingNumber')==='pingNumber' && (
+                  <>
+                    <Text style={styles.muted}>Biometric challenge at ping number</Text>
+                    {Platform.OS==='web' ? (
+                      <input type="number" min="1" max="10" value={String(settings.biometricAtPingNumber||1)} onChange={e=>setSettings({ ...settings, biometricAtPingNumber: Number(e.target.value||'1') })} style={styles.webInput} />
+                    ) : (
+                      <TextInput value={String(settings.biometricAtPingNumber||1)} onChangeText={t=>setSettings({ ...settings, biometricAtPingNumber: Number(t||'1') })} style={styles.input} placeholder="1" />
+                    )}
+                  </>
+                )}
+
+                {(settings.biometricTriggerMode||'pingNumber')==='time' && (
+                  <>
+                    <Text style={styles.muted}>Biometric time windows (HH:mm-HH:mm; separate by ;)</Text>
+                    {Platform.OS==='web' ? (
+                      <input value={(settings.biometricTimeWindows||[]).map(w=>`${w.start||''}-${w.end||''}`).join(';')} onChange={e=>{
+                        const arr = e.target.value.split(';').map(s=>s.trim()).filter(Boolean).map(p=>{ const [a,b] = p.split('-'); return { start: (a||'').trim(), end: (b||'').trim() }; });
+                        setSettings({ ...settings, biometricTimeWindows: arr });
+                      }} style={styles.webInput} />
+                    ) : (
+                      <TextInput value={(settings.biometricTimeWindows||[]).map(w=>`${w.start||''}-${w.end||''}`).join(';')} onChangeText={t=>{
+                        const arr = t.split(';').map(s=>s.trim()).filter(Boolean).map(p=>{ const [a,b] = p.split('-'); return { start: (a||'').trim(), end: (b||'').trim() }; });
+                        setSettings({ ...settings, biometricTimeWindows: arr });
+                      }} style={styles.input} placeholder={'09:10-09:20; 11:00-11:05'} />
+                    )}
+                  </>
+                )}
+
+                {(settings.biometricTriggerMode||'pingNumber')==='period' && (
+                  <>
+                    <Text style={styles.muted}>Biometric required periods (comma separated)</Text>
+                    {Platform.OS==='web' ? (
+                      <input value={(settings.biometricPeriods||[]).join(',')} onChange={e=>setSettings({ ...settings, biometricPeriods: e.target.value.split(',').map(s=>Number(s.trim())).filter(n=>!isNaN(n)) })} style={styles.webInput} />
+                    ) : (
+                      <TextInput value={(settings.biometricPeriods||[]).join(',')} onChangeText={t=>setSettings({ ...settings, biometricPeriods: t.split(',').map(s=>Number(s.trim())).filter(n=>!isNaN(n)) })} style={styles.input} placeholder={'1,3,5'} />
+                    )}
+                  </>
+                )}
 
                 <TouchableOpacity onPress={saveSettings} style={styles.primaryBtn}><Text style={styles.primaryBtnText}>Save Settings</Text></TouchableOpacity>
               </View>
@@ -673,11 +757,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    backgroundColor: Platform.OS==='web' ? 'rgba(255,255,255,0.9)' : '#ffffff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+    ...Platform.select({ default: { elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowOffset: { width: 0, height: 2 }, shadowRadius: 4 } })
   },
   brand: { fontSize: 20, fontWeight: '800', color: '#010101ff' },
   navRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 18, flexWrap: 'wrap' },
   navRowSmall: { flexDirection:'row', flexWrap:'wrap', gap: 12 },
-  navTab: { alignItems: 'center' },
+  navRowMobile: { flexDirection:'row', alignItems:'flex-end', gap: 16, paddingVertical: 4 },
+  navTab: { alignItems: 'center', paddingHorizontal: 6 },
   navTabBig: { width: '100%', alignItems:'flex-start' },
   navTabText: { color: '#000000ff', fontWeight: '800', fontSize: 14 },
   navTabTextActive: { color: '#000000ff' },
@@ -715,9 +804,9 @@ const styles = StyleSheet.create({
   value: { color: '#0f172a', fontWeight: '700' },
   rowBetween: { flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginTop: 4 },
   primaryBtn: { marginTop: 12, backgroundColor: '#60a5fa', paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
-  primaryBtnText: { color: '#0f172a', fontWeight: '400' },
+  primaryBtnText: { color: '#0f172a', fontWeight: '800' },
   secondaryBtn: { backgroundColor: 'rgba(96,165,250,0.15)', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 8, marginTop: 6 },
-  secondaryBtnText: { color: '#000000ff', fontWeight: '400' },
+  secondaryBtnText: { color: '#000000ff', fontWeight: '700' },
   link: { color: '#000000ff', fontWeight: '700', textDecorationLine: 'underline' },
 
   mapWrap: { height: 200, borderRadius: 12, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.6)' },

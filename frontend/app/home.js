@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import * as Location from 'expo-location';
 import { startBackgroundTracking } from '../utils/background';
@@ -27,6 +27,7 @@ export default function HomeScreen() {
   const [status, setStatus] = useState('');
   const [attendance, setAttendance] = useState([]);
   const [attendanceDate, setAttendanceDate] = useState('');
+  const settingsRef = useRef(null);
 
   const refreshAttendance = async (id) => {
     try {
@@ -111,12 +112,23 @@ useEffect(() => {
       // Determine current period based on last attendance date or time
       const now = new Date();
       const periodNumber = 1; // simple demo: period 1; can be improved with timetable
-      if (currentPeriodRef !== periodNumber) { currentPeriodRef = periodNumber; pingCount = 0; challengeIndex = Math.ceil(Math.random()*4); }
+      if (currentPeriodRef !== periodNumber) { 
+        currentPeriodRef = periodNumber; 
+        pingCount = 0; 
+        try {
+          const sres = await fetch('https://attendancesystem-backend-mias.onrender.com/admin/settings');
+          settingsRef.current = await sres.json();
+        } catch {}
+        const threshold = Math.max(1, Number(settingsRef.current?.pingThresholdPerPeriod || 4));
+        const atN = Math.min(Math.max(1, Number(settingsRef.current?.biometricAtPingNumber || 1)), threshold);
+        challengeIndex = atN;
+      }
       if (!pingTimer) {
         pingTimer = setInterval(async () => {
           try {
             if (!user) return;
-            if (pingCount >= 4) { stopPing(); return; }
+            const threshold = Math.max(1, Number(settingsRef.current?.pingThresholdPerPeriod || 4));
+            if (pingCount >= threshold) { stopPing(); return; }
             // Get location (reuse sendPing flow)
             let loc;
             try { loc = await Location.getCurrentPositionAsync({}); } catch {
@@ -125,7 +137,23 @@ useEffect(() => {
               }
             }
             if (!loc) return;
-            const doBiometric = (pingCount+1) === challengeIndex;
+            let doBiometric = (pingCount+1) === challengeIndex;
+            const mode = settingsRef.current?.biometricTriggerMode || 'pingNumber';
+            if (mode === 'time') {
+              const now = new Date();
+              const m = now.getHours()*60 + now.getMinutes();
+              const windows = settingsRef.current?.biometricTimeWindows || [];
+              doBiometric = windows.some(w=>{
+                const [sh,sm] = String(w.start||'').split(':').map(Number);
+                const [eh,em] = String(w.end||'').split(':').map(Number);
+                const a = (sh||0)*60 + (sm||0);
+                const b = (eh||0)*60 + (em||0);
+                return m>=a && m<=b;
+              });
+            } else if (mode === 'period') {
+              const list = settingsRef.current?.biometricPeriods || [];
+              doBiometric = list.includes(currentPeriodRef) && (pingCount===0);
+            }
             let biometricVerified = false;
             if (doBiometric) {
               try {
@@ -144,7 +172,7 @@ useEffect(() => {
                 }
               } catch {}
             }
-            const timestampType = types[Math.min(pingCount, 3)];
+            const timestampType = types[Math.min(pingCount, types.length-1)];
             await fetch('https://attendancesystem-backend-mias.onrender.com/attendance/mark', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({

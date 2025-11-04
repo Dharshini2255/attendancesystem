@@ -230,8 +230,38 @@ app.post('/attendance/mark', async (req, res) => {
       return 2 * R * Math.atan2(Math.sqrt(h), Math.sqrt(1-h));
     };
 
-    const allowedByCollege = settings?.useCollegeLocation ? (distanceMeters(location, collegeAnchor) <= MAX_RADIUS_METERS) : false;
-    const allowedByProximity = proximityAnchor ? (distanceMeters(location, proximityAnchor) <= proximityRadius && !!student.loggedIn) : false;
+    // polygon containment if provided
+    const pointInPolygon = (pt, poly) => {
+      let inside = false;
+      for (let i=0,j=poly.length-1; i<poly.length; j=i++) {
+        const xi=poly[i].latitude, yi=poly[i].longitude;
+        const xj=poly[j].latitude, yj=poly[j].longitude;
+        const intersect = ((yi>pt.longitude)!==(yj>pt.longitude)) && (pt.latitude < (xj - xi) * (pt.longitude - yi) / (yj - yi + 1e-12) + xi);
+        if (intersect) inside = !inside;
+      }
+      return inside;
+    };
+
+    let allowedByCollege = false;
+    if (settings?.useCollegeLocation) {
+      if (Array.isArray(settings?.collegePolygon) && settings.collegePolygon.length >= 3) {
+        allowedByCollege = pointInPolygon(location, settings.collegePolygon);
+      } else {
+        allowedByCollege = distanceMeters(location, collegeAnchor) <= MAX_RADIUS_METERS;
+      }
+    }
+    let allowedByProximity = false;
+    if (proximityAnchor) {
+      allowedByProximity = distanceMeters(location, proximityAnchor) <= proximityRadius && !!student.loggedIn;
+    }
+    if (Array.isArray(settings?.proximityAnchors) && settings.proximityAnchors.length) {
+      for (const a of settings.proximityAnchors) {
+        if (a?.location?.latitude && a?.location?.longitude) {
+          const r = Number(a.radiusMeters || proximityRadius);
+          if (distanceMeters(location, a.location) <= r) { allowedByProximity = true; break; }
+        }
+      }
+    }
     if (!(allowedByCollege || allowedByProximity)) {
       return res.status(403).json({ error: "Outside allowed location. Attendance not marked." });
     }
@@ -263,8 +293,24 @@ app.post('/attendance/mark', async (req, res) => {
     });
 
     const validPings = allPings.filter(p => {
-      const byCollege = settings?.useCollegeLocation ? (distanceMeters(p.location, collegeAnchor) <= MAX_RADIUS_METERS) : false;
-      const byProx = proximityAnchor ? (distanceMeters(p.location, proximityAnchor) <= proximityRadius && !!student.loggedIn) : false;
+      let byCollege = false;
+      if (settings?.useCollegeLocation) {
+        if (Array.isArray(settings?.collegePolygon) && settings.collegePolygon.length >= 3) {
+          byCollege = pointInPolygon(p.location, settings.collegePolygon);
+        } else {
+          byCollege = distanceMeters(p.location, collegeAnchor) <= MAX_RADIUS_METERS;
+        }
+      }
+      let byProx = false;
+      if (proximityAnchor) byProx = distanceMeters(p.location, proximityAnchor) <= proximityRadius && !!student.loggedIn;
+      if (Array.isArray(settings?.proximityAnchors) && settings.proximityAnchors.length) {
+        for (const a of settings.proximityAnchors) {
+          if (a?.location?.latitude && a?.location?.longitude) {
+            const r = Number(a.radiusMeters || proximityRadius);
+            if (distanceMeters(p.location, a.location) <= r) { byProx = true; break; }
+          }
+        }
+      }
       return byCollege || byProx;
     });
 
@@ -377,12 +423,19 @@ const adminSettingsSchema = new mongoose.Schema({
   // Location controls
   locationMode: { type: String, enum: ['college','staff'], default: 'college' }, // legacy
   useCollegeLocation: { type: Boolean, default: true },
-  collegeLocation: { latitude: Number, longitude: Number },
+  collegeLocation: { latitude: Number, longitude: Number }, // center (optional)
+  collegePolygon: [{ latitude: Number, longitude: Number }], // up to 4 vertices
   staffLocation: { latitude: Number, longitude: Number },
   proximityLocation: { latitude: Number, longitude: Number },
   proximityRadiusMeters: { type: Number, default: 100 },
+  proximityAnchors: [{ username: String, regNo: String, location: { latitude: Number, longitude: Number }, radiusMeters: { type: Number, default: 100 } }],
   // Attendance rules
-  pingThresholdPerPeriod: { type: Number, default: 4 }
+  pingThresholdPerPeriod: { type: Number, default: 4 },
+  // Biometric trigger configuration
+  biometricTriggerMode: { type: String, enum: ['pingNumber','time','period'], default: 'pingNumber' },
+  biometricAtPingNumber: { type: Number, default: 1 },
+  biometricTimeWindows: [{ start: String, end: String }], // HH:mm
+  biometricPeriods: [Number]
 });
 const AdminSettings = mongoose.model('AdminSettings', adminSettingsSchema);
 
@@ -425,9 +478,15 @@ app.get('/admin/settings', async (_req, res) => {
       locationMode: 'college',
       useCollegeLocation: true,
       collegeLocation: { latitude: 12.8005328, longitude: 80.0388091 },
+      collegePolygon: [],
       proximityLocation: null,
       proximityRadiusMeters: 100,
+      proximityAnchors: [],
       pingThresholdPerPeriod: 4,
+      biometricTriggerMode: 'pingNumber',
+      biometricAtPingNumber: 1,
+      biometricTimeWindows: [],
+      biometricPeriods: [],
     };
     res.json(s);
   } catch (err) {
