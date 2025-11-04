@@ -662,7 +662,7 @@ const styles = StyleSheet.create({
   fill: { flex: 1 },
   bg: Platform.select({
     web: {
-      backgroundImage: 'linear-gradient(135deg, #000000ff 0%, #000000ff 50%, #000000ff 100%)',
+      backgroundImage: 'linear-gradient(135deg, #ffffffff 0%, #ffffffff 50%, #ffffffff 100%)',
     },
     default: { backgroundColor: '#ffffffff' },
   }),
