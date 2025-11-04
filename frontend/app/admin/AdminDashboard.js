@@ -388,7 +388,7 @@ export default function AdminDashboard() {
                           alert(JSON.stringify(detail, null, 2));
                         } catch {}
                       }}>
-                        <Text style={[styles.td, { color:'#2563eb', textDecorationLine:'underline' }]}>{r.studentName}</Text>
+                        <Text style={[styles.td, { color:'#0b0e14ff', textDecorationLine:'underline' }]}>{r.studentName}</Text>
                       </TouchableOpacity>
                       <Text style={[styles.td, { flex: 1.5 }]}>{r.regNo}</Text>
                       {r.periodNumber != null ? (
@@ -649,13 +649,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  brand: { fontSize: 20, fontWeight: '800', color: '#3b0764' },
+  brand: { fontSize: 20, fontWeight: '800', color: '#ffffffff' },
   navRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 18, flexWrap: 'wrap' },
   navTab: { alignItems: 'center' },
-  navTabText: { color: '#6b21a8', fontWeight: '800', fontSize: 14 },
-  navTabTextActive: { color: '#3b0764' },
+  navTabText: { color: '#fdfbffff', fontWeight: '800', fontSize: 14 },
+  navTabTextActive: { color: '#926dadff' },
   navUnderline: { height: 2, width: '100%', backgroundColor: 'transparent', marginTop: 4, borderRadius: 9999 },
-  navUnderlineActive: { backgroundColor: '#7c3aed' },
+  navUnderlineActive: { backgroundColor: '#9757a0ff' },
   logout: { flexDirection:'row', alignItems:'center', gap:6, paddingVertical:4, paddingHorizontal:6, borderRadius:6 },
 
   page: { flexGrow: 1, padding: 16, gap: 16 },
@@ -668,7 +668,7 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: 16,
     padding: 16,
-    backgroundColor: 'rgba(255,255,255,0.75)',
+    backgroundColor: 'rgba(141, 61, 161, 0.75)',
     ...Platform.select({ web: { boxShadow: '0 12px 30px rgba(91, 33, 182, 0.08)', border: '1px solid #eadcff' }, default: {} }),
   },
   contentBox: { padding: 12 },
