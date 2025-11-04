@@ -713,7 +713,7 @@ const styles = StyleSheet.create({
 
   segmentRow: { flexDirection:'row', gap: 8, flexWrap:'wrap' },
   segmentBtn: { paddingVertical:6, paddingHorizontal:12, borderRadius: 9999, backgroundColor:'rgba(255,255,255,0.6)' },
-  segmentActive: { backgroundColor:'rgba(255,255,255,0.9)' },
+  segmentActive: { backgroundColor:'rgba(139, 129, 129, 0.9)' },
   segmentLabel: { color:'#0f172a', fontWeight:'700' },
 
   input: { padding: 10, backgroundColor:'rgba(255, 255, 255, 1), 0.8)', borderRadius: 10, color:'#0f172a' },
