@@ -669,7 +669,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 16,
     backgroundColor: 'rgba(104, 100, 100, 0.75)',
-    ...Platform.select({ web: { boxShadow: '0 12px 30px rgba(91, 33, 182, 0.08)', backgroundColor:'rgba(104, 100, 100, 0.75)' }, default: {} }),
+    ...Platform.select({ web: { boxShadow: '0 12px 30px rgba(91, 33, 182, 0.08)', border: '1px solid #796e6aff' }, default: {} }),
   },
   contentBox: { padding: 12 },
 
