@@ -147,7 +147,7 @@ export default function Step4() {
         </View>
         {!location && (
           <Text style={{ color: '#aaa', marginBottom: 10 }}>
-            Allow location permission and press "Retry Location".
+            Allow location permission and press “Retry Location”.
           </Text>
         )}
         {location && (

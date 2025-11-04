@@ -1,7 +1,10 @@
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Alert, Button, ScrollView, StyleSheet, Text, View, TouchableOpacity } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, View, TouchableOpacity, Platform, TextInput, Switch } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
+import { Image } from 'expo-image';
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -28,8 +31,7 @@ export default function AdminDashboard() {
         const v = await AsyncStorage.getItem('adminAuth');
         if (v === 'true') {
           setAuthorized(true);
-          await loadUsers();
-          await loadAttendance();
+          await Promise.all([loadUsers(), loadAttendance(), loadPings(), loadNotifications(), loadSessions(), readControl()]);
         } else {
           Alert.alert('Unauthorized', 'Admin access required');
           router.replace('/home');
@@ -125,268 +127,294 @@ export default function AdminDashboard() {
     window.location.assign(url);
   };
 
+  const attendancePercent = useMemo(() => {
+    let present = 0, absent = 0;
+    for (const r of attRows) {
+      if (typeof r.present === 'number' || typeof r.absent === 'number') {
+        present += r.present || 0; absent += r.absent || 0;
+      } else if (r.status) {
+        if (r.status === 'present') present += 1; else if (r.status === 'absent') absent += 1;
+      }
+    }
+    const total = present + absent;
+    return total ? Math.round((present / total) * 100) : 0;
+  }, [attRows]);
+
   if (!authorized) {
-    return <View style={styles.container}><Text style={{ color: '#fff' }}>Checking admin access…</Text></View>;
+    return <View style={[styles.fill, styles.bg]}><Text style={{ color: '#1f2937' }}>Checking admin access…</Text></View>;
   }
 
-  const ActionButton = ({ title, color = '#3b82f6', onPress }) => (
-    <TouchableOpacity onPress={onPress} style={[styles.btn, { backgroundColor: color }]}>
-      <Text style={styles.btnText}>{title}</Text>
+  const NavItem = ({ active, icon, label, onPress }) => (
+    <TouchableOpacity onPress={onPress} style={[styles.navItem, active && styles.navItemActive]}>
+      <Ionicons name={icon} size={18} color={active ? '#0f172a' : '#334155'} />
+      <Text style={[styles.navLabel, active && styles.navLabelActive]}>{label}</Text>
     </TouchableOpacity>
   );
 
+  const Panel = ({ style, children }) => (
+    <BlurView intensity={40} tint="light" style={[styles.card, style]}>{children}</BlurView>
+  );
+
   return (
-    <View style={{ flex: 1, backgroundColor: '#fff' }}>
-      {/* Header bar with title and buttons */}
-      <View style={styles.headerBar}>
-        <Text style={styles.title}>Admin Dashboard</Text>
-        <View style={styles.buttonGroup}>
-          <ActionButton title="Dashboard" color="#3b82f6" onPress={() => { setTab('dashboard'); loadUsers(); loadSessions(); }} />
-          <ActionButton title="Attendance" color="#8b5cf6" onPress={() => { setTab('attendance'); loadAttendance(); }} />
-          <ActionButton title="Settings" color="#10b981" onPress={() => { setTab('settings'); readSettings(); }} />
-          <ActionButton title="Notifications" color="#f59e0b" onPress={() => { setTab('notifications'); loadNotifications(); }} />
-          <ActionButton title="Filters" color="#64748b" onPress={() => setShowFilters(true)} />
-          <ActionButton title="Logout" color="#ef4444" onPress={async () => { await AsyncStorage.removeItem('adminAuth'); router.replace('/home'); }} />
+    <View style={[styles.fill, styles.bg]}>
+      {/* Top nav */}
+      <View style={styles.topBar}>
+        <Text style={styles.brand}>Admin Dashboard</Text>
+        <View style={styles.navRow}>
+          <NavItem active={tab==='dashboard'} icon="grid-outline" label="Dashboard" onPress={() => { setTab('dashboard'); loadPings(); loadNotifications(); }} />
+          <NavItem active={tab==='settings'} icon="settings-outline" label="Settings" onPress={() => { setTab('settings'); readSettings(); }} />
+          <NavItem active={tab==='attendance'} icon="bar-chart-outline" label="Attendance" onPress={() => { setTab('attendance'); loadAttendance(); }} />
+          <NavItem active={tab==='notifications'} icon="notifications-outline" label="Notifications" onPress={() => { setTab('notifications'); loadNotifications(); }} />
+          <TouchableOpacity onPress={async () => { await AsyncStorage.removeItem('adminAuth'); router.replace('/home'); }} style={styles.logout}>
+            <Ionicons name="log-out-outline" size={18} color="#334155" />
+            <Text style={styles.navLabel}>Logout</Text>
+          </TouchableOpacity>
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scroll}>
-
-      {tab === 'dashboard' && (
-        <View style={{ width: '100%' }}>
-          <Text style={styles.textDark}>Overview</Text>
-          <View style={{ flexDirection: 'row', gap: 12, flexWrap: 'wrap', marginVertical: 8 }}>
-            <View style={{ backgroundColor: '#e2e8f0', padding: 12, borderRadius: 8 }}>
-              <Text style={styles.textDark}>Users: {users.length}</Text>
-            </View>
-            <View style={{ backgroundColor: '#e2e8f0', padding: 12, borderRadius: 8 }}>
-              <Text style={styles.textDark}>Logged In: {sessions.loggedIn?.length || 0}</Text>
-            </View>
-            <View style={{ backgroundColor: '#e2e8f0', padding: 12, borderRadius: 8 }}>
-              <Text style={styles.textDark}>Alerts: {notifications.length}</Text>
-            </View>
-          </View>
-          <Text style={[styles.th, { marginTop: 12 }]}>Recent Pings</Text>
-          <View style={styles.table}>
-            <View style={styles.tableHeader}>
-              <Text style={[styles.th, { flex: 2 }]}>Time</Text>
-              <Text style={[styles.th, { flex: 2 }]}>Name</Text>
-              <Text style={[styles.th, { flex: 2 }]}>Reg No</Text>
-              <Text style={[styles.th, { flex: 2 }]}>Type</Text>
-            </View>
-            {pings.slice(0,10).map((p,i)=>(
-              <View key={i} style={styles.tableRow}>
-                <Text style={[styles.td,{flex:2}]}>{new Date(p.timestamp).toLocaleString()}</Text>
-                <Text style={[styles.td,{flex:2}]}>{p.studentName}</Text>
-                <Text style={[styles.td,{flex:2}]}>{p.regNo}</Text>
-                <Text style={[styles.td,{flex:2}]}>{p.periodNumber} {p.timestampType}</Text>
+      <ScrollView contentContainerStyle={styles.page}>
+        {tab === 'dashboard' && (
+          <View style={styles.grid}>
+            {/* Left: Attendance Setup */}
+            <Panel style={styles.leftCol}>
+              <Text style={styles.panelTitle}>Attendance Setup</Text>
+              <View style={styles.rowBetween}><Text style={styles.muted}>Day</Text><Text style={styles.value}>{settings.day || '—'}</Text></View>
+              <View style={styles.rowBetween}><Text style={styles.muted}>Date</Text><Text style={styles.value}>{settings.date}</Text></View>
+              <View style={styles.rowBetween}><Text style={styles.muted}>Start</Text><Text style={styles.value}>{settings.startTime}</Text></View>
+              <View style={styles.rowBetween}><Text style={styles.muted}>End</Text><Text style={styles.value}>{settings.endTime}</Text></View>
+              <View style={[styles.rowBetween,{marginTop:8}]}> 
+                <Text style={styles.muted}>College Location</Text>
+                <Switch value={settings.locationMode==='college'} onValueChange={(v)=>setSettings({...settings, locationMode: v?'college':'staff'})} />
               </View>
-            ))}
-          </View>
-        </View>
-      )}
+              <TouchableOpacity onPress={saveSettings} style={styles.primaryBtn}><Text style={styles.primaryBtnText}>Save</Text></TouchableOpacity>
+            </Panel>
 
-      {tab === 'attendance' && (
-        <View style={{ width: '100%' }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-            <Text style={styles.textDark}>Users: {users.length}</Text>
-            <ActionButton title="Export CSV" color="#22c55e" onPress={exportUsers} />
-          </View>
-          <View style={styles.table}>
-            <View style={styles.tableHeader}>
-              <Text style={[styles.th, { flex: 2 }]}>Name</Text>
-              <Text style={[styles.th, { flex: 1.5 }]}>Reg No</Text>
-              <Text style={[styles.th, { flex: 1 }]}>Class</Text>
-              <Text style={[styles.th, { flex: 0.8 }]}>Year</Text>
-              <Text style={[styles.th, { flex: 2.5 }]}>Email</Text>
-              <Text style={[styles.th, { flex: 1.5 }]}>Username</Text>
-              <Text style={[styles.th, { flex: 2 }]}>UUID</Text>
-            </View>
-            {users.map((u, i) => (
-              <View key={u._id || i} style={styles.tableRow}>
-                <Text style={[styles.td, { flex: 2 }]}>{u.name}</Text>
-                <Text style={[styles.td, { flex: 1.5 }]}>{u.regNo}</Text>
-                <Text style={[styles.td, { flex: 1 }]}>{u.class}</Text>
-                <Text style={[styles.td, { flex: 0.8 }]}>{u.year}</Text>
-                <Text style={[styles.td, { flex: 2.5 }]}>{u.email}</Text>
-                <Text style={[styles.td, { flex: 1.5 }]}>{u.username}</Text>
-                <Text style={[styles.td, { flex: 2 }]}>{u.uuid}</Text>
+            {/* Center: Map / Overview */}
+            <Panel style={styles.centerCol}>
+              <Text style={styles.panelTitle}>Real-time Attendance Overview</Text>
+              <View style={styles.mapWrap}>
+                <Image source={{ uri: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/80/World_map_-_low_resolution.svg/1024px-World_map_-_low_resolution.svg.png' }} contentFit="contain" style={{ width: '100%', height: '100%' }} />
               </View>
-            ))}
-          </View>
-        </View>
-      )}
+              <View style={styles.legendRow}>
+                <View style={[styles.legendDot,{backgroundColor:'#60a5fa'}]} />
+                <Text style={styles.legendText}>Currently</Text>
+                <View style={[styles.legendDot,{backgroundColor:'#10b981'}]} />
+                <Text style={styles.legendText}>Active Classes</Text>
+                <View style={[styles.legendDot,{backgroundColor:'#f59e0b'}]} />
+                <Text style={styles.legendText}>Summary</Text>
+              </View>
+            </Panel>
 
-      {tab === 'attendance' && (
-        <View style={{ width: '100%' }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-            <Text style={styles.textDark}>Rows: {attRows.length}</Text>
-            <ActionButton title="Export CSV" color="#22c55e" onPress={exportAttendance} />
+            {/* Right: Notifications */}
+            <Panel style={styles.rightCol}>
+              <Text style={styles.panelTitle}>Notification Panel</Text>
+              <View style={{ gap: 10 }}>
+                {notifications.slice(0,6).map((n,i)=> (
+                  <View key={i} style={styles.noticeItem}>
+                    <Text style={styles.noticeTime}>{new Date(n.at||Date.now()).toLocaleTimeString()}</Text>
+                    <Text style={styles.noticeMsg}>{n.message}</Text>
+                  </View>
+                ))}
+                {notifications.length===0 && <Text style={styles.muted}>No notifications</Text>}
+              </View>
+            </Panel>
+
+            {/* Full-width: Student roster and analytics */}
+            <Panel style={styles.fullRow}>
+              <Text style={styles.panelTitle}>Student Roster</Text>
+              <View style={styles.table}>
+                <View style={styles.tableHeader}>
+                  <Text style={[styles.th,{flex:2}]}>Name</Text>
+                  <Text style={[styles.th,{flex:1.2}]}>Reg No</Text>
+                  <Text style={[styles.th,{flex:1}]}>Status</Text>
+                  <Text style={[styles.th,{flex:1}]}>Biometric</Text>
+                  <Text style={[styles.th,{flex:1}]}>Tracking</Text>
+                </View>
+                {users.slice(0,12).map((u,i)=> (
+                  <View key={u._id||i} style={styles.tableRow}>
+                    <Text style={[styles.td,{flex:2}]}>{u.name}</Text>
+                    <Text style={[styles.td,{flex:1.2}]}>{u.regNo}</Text>
+                    <Text style={[styles.td,{flex:1}]}>{u.loggedIn? 'Online' : 'Offline'}</Text>
+                    <Text style={[styles.td,{flex:1}]}>{u.biometricEnrolled? '✓' : '—'}</Text>
+                    <Text style={[styles.td,{flex:1}]}>{u.trackingEnabled? '✓' : '—'}</Text>
+                  </View>
+                ))}
+              </View>
+
+              {/* Side analytics */}
+              <View style={styles.analyticsRow}>
+                <View style={styles.gaugeWrap}>
+                  <View style={styles.gaugeCircle}>
+                    <Text style={styles.gaugeText}>{attendancePercent}%</Text>
+                  </View>
+                  <Text style={styles.muted}>Overall Attendance</Text>
+                </View>
+                <View style={styles.donutRow}>
+                  <View style={[styles.donut, { borderColor: '#60a5fa' }]} />
+                  <View style={[styles.donut, { borderColor: '#34d399' }]} />
+                  <View style={[styles.donut, { borderColor: '#f472b6' }]} />
+                </View>
+              </View>
+            </Panel>
+
+            {/* Pings table */}
+            <Panel style={styles.fullRow}>
+              <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center'}}>
+                <Text style={styles.panelTitle}>Recent Pings</Text>
+                <TouchableOpacity onPress={loadPings}><Text style={styles.link}>Refresh</Text></TouchableOpacity>
+              </View>
+              <View style={styles.table}>
+                <View style={styles.tableHeader}>
+                  <Text style={[styles.th, { flex: 2 }]}>Time</Text>
+                  <Text style={[styles.th, { flex: 1.5 }]}>Name</Text>
+                  <Text style={[styles.th, { flex: 1.2 }]}>Reg No</Text>
+                  <Text style={[styles.th, { flex: 1.2 }]}>Period</Text>
+                </View>
+                {pings.slice(0,20).map((p,i)=> (
+                  <View key={i} style={styles.tableRow}>
+                    <Text style={[styles.td,{flex:2}]}>{new Date(p.timestamp).toLocaleString()}</Text>
+                    <Text style={[styles.td,{flex:1.5}]}>{p.studentName||''}</Text>
+                    <Text style={[styles.td,{flex:1.2}]}>{p.regNo||''}</Text>
+                    <Text style={[styles.td,{flex:1.2}]}>{p.periodNumber||''} {p.timestampType||''}</Text>
+                  </View>
+                ))}
+              </View>
+            </Panel>
           </View>
-          <View style={styles.table}>
-            <View style={styles.tableHeader}>
-              <Text style={[styles.th, { flex: 1.5 }]}>{granularity==='day' ? 'Date' : 'Bucket'}</Text>
-              <Text style={[styles.th, { flex: 2 }]}>Name</Text>
-              <Text style={[styles.th, { flex: 1.5 }]}>Reg No</Text>
-              <Text style={[styles.th, { flex: 2 }]}>Details</Text>
-            </View>
-            {attRows.map((r, i) => (
-              <View key={i} style={styles.tableRow}>
-                <Text style={[styles.td, { flex: 1.5 }]}>{r.date || r.bucket}</Text>
-              <TouchableOpacity style={{ flex: 2 }} onPress={async () => {
-                try {
-                  const params = new URLSearchParams({ from: from, to: to });
-                  const res = await fetch(`${api}/admin/student/${encodeURIComponent(r.studentId)}/history?${params}`);
-                  const detail = await res.json();
-                  alert(JSON.stringify(detail, null, 2));
-                } catch {}
-              }}>
-                <Text style={[styles.td, { color:'#2563eb', textDecorationLine:'underline' }]}>{r.studentName}</Text>
-              </TouchableOpacity>
-                <Text style={[styles.td, { flex: 1.5 }]}>{r.regNo}</Text>
-                {r.periodNumber != null ? (
-                  <Text style={[styles.td, { flex: 2 }]}>P{r.periodNumber} - {r.status}</Text>
+        )}
+
+        {tab === 'attendance' && (
+          <View style={{ width: '100%', gap: 16 }}>
+            <Panel>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+                <Text style={styles.panelTitle}>Users</Text>
+                <TouchableOpacity onPress={exportUsers}><Text style={styles.link}>Export CSV</Text></TouchableOpacity>
+              </View>
+              <View style={styles.table}>
+                <View style={styles.tableHeader}>
+                  <Text style={[styles.th, { flex: 2 }]}>Name</Text>
+                  <Text style={[styles.th, { flex: 1.5 }]}>Reg No</Text>
+                  <Text style={[styles.th, { flex: 1 }]}>Class</Text>
+                  <Text style={[styles.th, { flex: 0.8 }]}>Year</Text>
+                  <Text style={[styles.th, { flex: 2.5 }]}>Email</Text>
+                  <Text style={[styles.th, { flex: 1.5 }]}>Username</Text>
+                </View>
+                {users.map((u, i) => (
+                  <View key={u._id || i} style={styles.tableRow}>
+                    <Text style={[styles.td, { flex: 2 }]}>{u.name}</Text>
+                    <Text style={[styles.td, { flex: 1.5 }]}>{u.regNo}</Text>
+                    <Text style={[styles.td, { flex: 1 }]}>{u.class}</Text>
+                    <Text style={[styles.td, { flex: 0.8 }]}>{u.year}</Text>
+                    <Text style={[styles.td, { flex: 2.5 }]}>{u.email}</Text>
+                    <Text style={[styles.td, { flex: 1.5 }]}>{u.username}</Text>
+                  </View>
+                ))}
+              </View>
+            </Panel>
+
+            <Panel>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+                <Text style={styles.panelTitle}>Attendance</Text>
+                <TouchableOpacity onPress={exportAttendance}><Text style={styles.link}>Export CSV</Text></TouchableOpacity>
+              </View>
+              <View style={styles.table}>
+                <View style={styles.tableHeader}>
+                  <Text style={[styles.th, { flex: 1.5 }]}>{granularity==='day' ? 'Date' : 'Bucket'}</Text>
+                  <Text style={[styles.th, { flex: 2 }]}>Name</Text>
+                  <Text style={[styles.th, { flex: 1.5 }]}>Reg No</Text>
+                  <Text style={[styles.th, { flex: 2 }]}>Details</Text>
+                </View>
+                {attRows.map((r, i) => (
+                  <View key={i} style={styles.tableRow}>
+                    <Text style={[styles.td, { flex: 1.5 }]}>{r.date || r.bucket}</Text>
+                    <TouchableOpacity style={{ flex: 2 }} onPress={async () => {
+                      try {
+                        const params = new URLSearchParams({ from: from, to: to });
+                        const res = await fetch(`${api}/admin/student/${encodeURIComponent(r.studentId)}/history?${params}`);
+                        const detail = await res.json();
+                        alert(JSON.stringify(detail, null, 2));
+                      } catch {}
+                    }}>
+                      <Text style={[styles.td, { color:'#2563eb', textDecorationLine:'underline' }]}>{r.studentName}</Text>
+                    </TouchableOpacity>
+                    <Text style={[styles.td, { flex: 1.5 }]}>{r.regNo}</Text>
+                    {r.periodNumber != null ? (
+                      <Text style={[styles.td, { flex: 2 }]}>P{r.periodNumber} - {r.status}</Text>
+                    ) : (
+                      <Text style={[styles.td, { flex: 2 }]}>Present: {r.present} | Absent: {r.absent}</Text>
+                    )}
+                  </View>
+                ))}
+              </View>
+            </Panel>
+          </View>
+        )}
+
+        {tab === 'settings' && (
+          <View style={{ width: '100%', gap: 16 }}>
+            <Panel>
+              <Text style={styles.panelTitle}>Attendance Settings</Text>
+              <View style={{ gap: 10 }}>
+                <Text style={styles.muted}>Date</Text>
+                {Platform.OS==='web' ? (
+                  <input type="date" value={settings.date||''} onChange={e=>setSettings({ ...settings, date: e.target.value })} style={styles.webInput} />
                 ) : (
-                  <Text style={[styles.td, { flex: 2 }]}>Present: {r.present} | Absent: {r.absent}</Text>
+                  <TextInput value={settings.date} onChangeText={t=>setSettings({...settings, date:t})} style={styles.input} placeholder="YYYY-MM-DD" />
                 )}
+
+                <Text style={styles.muted}>Day</Text>
+                {Platform.OS==='web' ? (
+                  <input value={settings.day||''} onChange={e=>setSettings({ ...settings, day: e.target.value })} style={styles.webInput} />
+                ) : (
+                  <TextInput value={settings.day} onChangeText={t=>setSettings({...settings, day:t})} style={styles.input} placeholder="Mon/Tue…" />
+                )}
+
+                <Text style={styles.muted}>Start Time</Text>
+                {Platform.OS==='web' ? (
+                  <input type="time" value={settings.startTime||''} onChange={e=>setSettings({ ...settings, startTime: e.target.value })} style={styles.webInput} />
+                ) : (
+                  <TextInput value={settings.startTime} onChangeText={t=>setSettings({...settings, startTime:t})} style={styles.input} placeholder="HH:mm" />
+                )}
+
+                <Text style={styles.muted}>End Time</Text>
+                {Platform.OS==='web' ? (
+                  <input type="time" value={settings.endTime||''} onChange={e=>setSettings({ ...settings, endTime: e.target.value })} style={styles.webInput} />
+                ) : (
+                  <TextInput value={settings.endTime} onChangeText={t=>setSettings({...settings, endTime:t})} style={styles.input} placeholder="HH:mm" />
+                )}
+
+                <View style={styles.rowBetween}>
+                  <Text style={styles.muted}>Use College Location</Text>
+                  <Switch value={settings.locationMode==='college'} onValueChange={(v)=>setSettings({...settings, locationMode: v?'college':'staff'})} />
+                </View>
+
+                <TouchableOpacity onPress={saveSettings} style={styles.primaryBtn}><Text style={styles.primaryBtnText}>Save Settings</Text></TouchableOpacity>
               </View>
-            ))}
+            </Panel>
           </View>
-        </View>
-      )}
+        )}
 
-      {tab === 'settings' && (
-        <View style={{ width: '100%' }}>
-          <Text style={styles.textDark}>Attendance Settings</Text>
-          <View style={{ gap: 8, marginBottom: 12 }}>
-            <Text>Date</Text>
-            <input type="date" value={settings.date||''} onChange={e=>setSettings({ ...settings, date: e.target.value })} style={styles.textInput} />
-            <Text>Day</Text>
-            <input value={settings.day||''} onChange={e=>setSettings({ ...settings, day: e.target.value })} style={styles.textInput} />
-            <Text>Start Time</Text>
-            <input type="time" value={settings.startTime||''} onChange={e=>setSettings({ ...settings, startTime: e.target.value })} style={styles.textInput} />
-            <Text>End Time</Text>
-            <input type="time" value={settings.endTime||''} onChange={e=>setSettings({ ...settings, endTime: e.target.value })} style={styles.textInput} />
-            <Text>Classes (comma-separated)</Text>
-            <input value={(settings.classes||[]).join(',')} onChange={e=>setSettings({ ...settings, classes: e.target.value.split(',').map(s=>s.trim()).filter(Boolean) })} style={styles.textInput} />
-            <Text>Sections (comma-separated)</Text>
-            <input value={(settings.sections||[]).join(',')} onChange={e=>setSettings({ ...settings, sections: e.target.value.split(',').map(s=>s.trim()).filter(Boolean) })} style={styles.textInput} />
-            <Text>Years (comma-separated)</Text>
-            <input value={(settings.years||[]).join(',')} onChange={e=>setSettings({ ...settings, years: e.target.value.split(',').map(s=>Number(s.trim())).filter(n=>!isNaN(n)) })} style={styles.textInput} />
-            <Text>Location Mode</Text>
-            <select value={settings.locationMode} onChange={e=>setSettings({ ...settings, locationMode: e.target.value })} style={styles.select}>
-              <option value="college">College</option>
-              <option value="staff">Staff</option>
-            </select>
-            <Text>College Location (lat,lon)</Text>
-            <input value={`${settings.collegeLocation?.latitude||''},${settings.collegeLocation?.longitude||''}`} onChange={e=>{ const [lat,lon]=e.target.value.split(','); setSettings({ ...settings, collegeLocation: { latitude: Number(lat), longitude: Number(lon) } }); }} style={styles.textInput} />
-            <Text>Staff Location (lat,lon)</Text>
-            <input value={`${settings.staffLocation?.latitude||''},${settings.staffLocation?.longitude||''}`} onChange={e=>{ const [lat,lon]=e.target.value.split(','); setSettings({ ...settings, staffLocation: { latitude: Number(lat), longitude: Number(lon) } }); }} style={styles.textInput} />
-            <ActionButton title="Save Settings" color="#3b82f6" onPress={saveSettings} />
-          </View>
-        </View>
-      )}
-
-      {tab === 'notifications' && (
-        <View style={{ width: '100%' }}>
-          <Text style={styles.textDark}>Notifications</Text>
-          <View style={styles.table}>
-            <View style={styles.tableHeader}>
-              <Text style={[styles.th,{flex:2}]}>Time</Text>
-              <Text style={[styles.th,{flex:2}]}>Student</Text>
-              <Text style={[styles.th,{flex:3}]}>Message</Text>
-            </View>
-            {notifications.map((n,i)=>(
-              <View key={i} style={styles.tableRow}>
-                <Text style={[styles.td,{flex:2}]}>{new Date(n.at||Date.now()).toLocaleString()}</Text>
-                <Text style={[styles.td,{flex:2}]}>{n.studentName} ({n.regNo})</Text>
-                <Text style={[styles.td,{flex:3}]}>{n.message}</Text>
+        {tab === 'notifications' && (
+          <Panel>
+            <Text style={styles.panelTitle}>Notifications</Text>
+            <View style={styles.table}>
+              <View style={styles.tableHeader}>
+                <Text style={[styles.th,{flex:2}]}>Time</Text>
+                <Text style={[styles.th,{flex:2}]}>Student</Text>
+                <Text style={[styles.th,{flex:3}]}>Message</Text>
               </View>
-            ))}
-          </View>
-        </View>
-      )}
-        <View style={{ width: '100%' }}>
-          <Text style={styles.textDark}>Pings: {pings.length}</Text>
-          <View style={styles.table}>
-            <View style={styles.tableHeader}>
-              <Text style={[styles.th, { flex: 2 }]}>Time</Text>
-              <Text style={[styles.th, { flex: 1.5 }]}>Name</Text>
-              <Text style={[styles.th, { flex: 1.5 }]}>Reg No</Text>
-              <Text style={[styles.th, { flex: 1.5 }]}>Period/Type</Text>
-              <Text style={[styles.th, { flex: 1 }]}>Location</Text>
+              {notifications.map((n,i)=>(
+                <View key={i} style={styles.tableRow}>
+                  <Text style={[styles.td,{flex:2}]}>{new Date(n.at||Date.now()).toLocaleString()}</Text>
+                  <Text style={[styles.td,{flex:2}]}>{n.studentName} ({n.regNo})</Text>
+                  <Text style={[styles.td,{flex:3}]}>{n.message}</Text>
+                </View>
+              ))}
             </View>
-            {pings.map((p, i) => (
-              <View key={i} style={styles.tableRow}>
-                <Text style={[styles.td, { flex: 2 }]}>{new Date(p.timestamp).toLocaleString()}</Text>
-                <Text style={[styles.td, { flex: 1.5 }]}>{p.studentName || ''}</Text>
-                <Text style={[styles.td, { flex: 1.5 }]}>{p.regNo || ''}</Text>
-                <Text style={[styles.td, { flex: 1.5 }]}>{p.periodNumber || ''} {p.timestampType || ''}</Text>
-                <TouchableOpacity style={{ flex: 1 }} onPress={() => window.open(`https://maps.google.com/?q=${p.location?.latitude},${p.location?.longitude}`, '_blank')}>
-                  <Text style={[styles.td, { color: '#3b82f6', textDecorationLine: 'underline' }]}>View Map</Text>
-                </TouchableOpacity>
-              </View>
-            ))}
-          </View>
-        </View>
-    
-
-      {tab === 'sessions' && (
-        <View style={{ width: '100%' }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-            <Text style={styles.textDark}>Logged in: {sessions.loggedIn.length} | Logged out: {sessions.loggedOut.length}</Text>
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              <ActionButton title={ctrl.pingEnabled ? 'Stop Pings' : 'Start Pings'} color={ctrl.pingEnabled ? '#ef4444' : '#22c55e'} onPress={() => toggleControl(!ctrl.pingEnabled)} />
-              <ActionButton title="Refresh" color="#64748b" onPress={() => { loadSessions(); readControl(); }} />
-            </View>
-          </View>
-
-          <View style={{ marginBottom: 12 }}>
-            <Text style={styles.textDark}>Interval (ms)</Text>
-            <input type="number" value={ctrl.intervalMs} onChange={e => setCtrl({ ...ctrl, intervalMs: Number(e.target.value) })} style={styles.textInput} />
-            <ActionButton title="Apply Interval" color="#3b82f6" onPress={() => toggleControl(ctrl.pingEnabled)} />
-          </View>
-
-          <Text style={[styles.th, { marginBottom: 6 }]}>Currently Logged In</Text>
-          <View style={styles.table}>
-            <View style={styles.tableHeader}>
-              <Text style={[styles.th, { flex: 2 }]}>Name</Text>
-              <Text style={[styles.th, { flex: 1.5 }]}>Reg No</Text>
-              <Text style={[styles.th, { flex: 1.5 }]}>Username</Text>
-              <Text style={[styles.th, { flex: 2 }]}>Last Login</Text>
-            </View>
-            {sessions.loggedIn.map((u, i) => (
-              <View key={i} style={styles.tableRow}>
-                <Text style={[styles.td, { flex: 2 }]}>{u.name}</Text>
-                <Text style={[styles.td, { flex: 1.5 }]}>{u.regNo}</Text>
-                <Text style={[styles.td, { flex: 1.5 }]}>{u.username}</Text>
-                <Text style={[styles.td, { flex: 2 }]}>{u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : ''}</Text>
-              </View>
-            ))}
-          </View>
-
-          <Text style={[styles.th, { marginVertical: 10 }]}>Logged Out</Text>
-          <View style={styles.table}>
-            <View style={styles.tableHeader}>
-              <Text style={[styles.th, { flex: 2 }]}>Name</Text>
-              <Text style={[styles.th, { flex: 1.5 }]}>Reg No</Text>
-              <Text style={[styles.th, { flex: 1.5 }]}>Username</Text>
-              <Text style={[styles.th, { flex: 2 }]}>Last Logout</Text>
-            </View>
-            {sessions.loggedOut.map((u, i) => (
-              <View key={i} style={styles.tableRow}>
-                <Text style={[styles.td, { flex: 2 }]}>{u.name}</Text>
-                <Text style={[styles.td, { flex: 1.5 }]}>{u.regNo}</Text>
-                <Text style={[styles.td, { flex: 1.5 }]}>{u.username}</Text>
-                <Text style={[styles.td, { flex: 2 }]}>{u.lastLogoutAt ? new Date(u.lastLogoutAt).toLocaleString() : ''}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-      )}
-
+          </Panel>
+        )}
       </ScrollView>
-      
+
       {/* Slide-in filter sidebar */}
       {showFilters && (
         <View style={styles.backdrop} onClick={() => setShowFilters(false)}>
@@ -429,22 +457,23 @@ export default function AdminDashboard() {
                   style={styles.textInput}
                 />
                 
-                <ActionButton 
-                  title="Apply Filters" 
-                  color="#3b82f6" 
+                <TouchableOpacity 
                   onPress={() => { 
                     setShowFilters(false); 
                     if (tab==='attendance') loadAttendance(); 
-                    else if (tab==='pings') loadPings(); 
-                    else if (tab==='users') loadUsers();
+                    else loadPings();
+                    loadUsers();
                   }} 
-                />
+                  style={[styles.primaryBtn,{alignSelf:'flex-start'}]}
+                >
+                  <Text style={styles.primaryBtnText}>Apply Filters</Text>
+                </TouchableOpacity>
               </View>
               
               <View style={styles.filterSection}>
                 <Text style={styles.sectionTitle}>Export Data</Text>
-                <ActionButton title="Export Users (CSV)" color="#059669" onPress={exportUsers} />
-                <ActionButton title="Export Attendance (CSV)" color="#059669" onPress={exportAttendance} />
+                <TouchableOpacity onPress={exportUsers} style={styles.secondaryBtn}><Text style={styles.secondaryBtnText}>Export Users (CSV)</Text></TouchableOpacity>
+                <TouchableOpacity onPress={exportAttendance} style={styles.secondaryBtn}><Text style={styles.secondaryBtnText}>Export Attendance (CSV)</Text></TouchableOpacity>
                 <Text style={styles.hint}>CSV files open directly in Excel</Text>
               </View>
               
@@ -475,178 +504,98 @@ export default function AdminDashboard() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
-  headerBar: {
+  fill: { flex: 1 },
+  bg: Platform.select({
+    web: {
+      backgroundImage: 'linear-gradient(135deg, #ecf2ff 0%, #eafaf6 50%, #fef3f7 100%)',
+    },
+    default: { backgroundColor: '#eef2ff' },
+  }),
+
+  topBar: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  brand: { fontSize: 20, fontWeight: '800', color: '#0f172a' },
+  navRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  navItem: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 10, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.6)' },
+  navItemActive: { backgroundColor: 'rgba(255,255,255,0.85)' },
+  navLabel: { color: '#334155', fontWeight: '700' },
+  navLabelActive: { color: '#0f172a' },
+  logout: { flexDirection:'row', alignItems:'center', gap:6, paddingVertical:8, paddingHorizontal:10, borderRadius:10, backgroundColor:'rgba(255,255,255,0.6)' },
+
+  page: { flexGrow: 1, padding: 16, gap: 16 },
+  grid: { width: '100%', gap: 16 },
+  leftCol: { width: '100%' },
+  centerCol: { width: '100%' },
+  rightCol: { width: '100%' },
+  fullRow: { width: '100%' },
+
+  card: {
+    borderRadius: 16,
     padding: 16,
-    backgroundColor: '#f8fafc',
-    borderBottomColor: '#e5e7eb',
-    borderBottomWidth: 1,
+    backgroundColor: 'rgba(255,255,255,0.6)',
+    ...Platform.select({ web: { boxShadow: '0 8px 30px rgba(2, 6, 23, 0.08)' }, default: {} }),
   },
-  title: { color: '#111', fontSize: 26, fontWeight: '800' },
-  buttonGroup: { flexDirection: 'row', gap: 8 },
-  scroll: { flexGrow: 1, backgroundColor: '#fff', padding: 20 },
-  text: { color: '#555' },
-  textDark: { color: '#111' },
-  btn: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 6 },
-  btnText: { color: '#fff', fontWeight: '700' },
-  
-  backdrop: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    zIndex: 1000,
-  },
-  sidebar: {
-    position: 'absolute',
-    right: 0,
-    top: 0,
-    height: '100vh',
-    width: 380,
-    backgroundColor: '#fff',
-    boxShadow: '-4px 0 12px rgba(0,0,0,0.15)',
-  },
-  foldHandle: {
-    position: 'absolute',
-    left: -24,
-    top: '50%',
-    marginTop: -20,
-    width: 24,
-    height: 40,
-    borderTopLeftRadius: 4,
-    borderBottomLeftRadius: 4,
-    backgroundColor: '#64748b',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sidebarHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomColor: '#e5e7eb',
-    borderBottomWidth: 1,
-    backgroundColor: '#f8fafc',
-  },
-  sidebarTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#111',
-  },
-  closeBtn: {
-    padding: 8,
-    borderRadius: 4,
-    backgroundColor: '#ef4444',
-  },
-  closeBtnText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  sidebarContent: {
-    padding: 16,
-    gap: 24,
-  },
-  filterSection: {
-    gap: 8,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111',
-    marginBottom: 8,
-  },
-  dateRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
-  },
-  dateLabel: {
-    minWidth: 40,
-    color: '#555',
-  },
-  dateInput: {
-    flex: 1,
-    padding: 8,
-    border: '1px solid #d1d5db',
-    borderRadius: 4,
-  },
-  select: {
-    width: '100%',
-    padding: 8,
-    border: '1px solid #d1d5db',
-    borderRadius: 4,
-    marginBottom: 8,
-  },
-  textInput: {
-    width: '100%',
-    padding: 8,
-    border: '1px solid #d1d5db',
-    borderRadius: 4,
-    marginBottom: 8,
-  },
-  hint: {
-    fontSize: 12,
-    color: '#6b7280',
-    marginTop: 4,
-  },
-  chartTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#111',
-    marginBottom: 8,
-  },
-  chartBar: {
-    height: 20,
-    flexDirection: 'row',
-    backgroundColor: '#e5e7eb',
-    borderRadius: 4,
-    overflow: 'hidden',
-    marginBottom: 4,
-  },
-  chartSegment: {
-    height: '100%',
-  },
-  chartLabel: {
-    fontSize: 12,
-    color: '#555',
-  },
-  
-  table: {
-    width: '100%',
-    borderColor: '#e5e7eb',
-    borderWidth: 1,
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  tableHeader: {
-    flexDirection: 'row',
-    backgroundColor: '#f8fafc',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderBottomColor: '#e5e7eb',
-    borderBottomWidth: 1,
-  },
-  tableRow: {
-    flexDirection: 'row',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderBottomColor: '#f3f4f6',
-    borderBottomWidth: 1,
-  },
-  th: {
-    color: '#374151',
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  td: {
-    color: '#111',
-    fontSize: 14,
-  },
+
+  panelTitle: { fontSize: 16, fontWeight: '800', color: '#0f172a', marginBottom: 10 },
+  muted: { color: '#475569' },
+  value: { color: '#0f172a', fontWeight: '700' },
+  rowBetween: { flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginTop: 4 },
+  primaryBtn: { marginTop: 12, backgroundColor: '#60a5fa', paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
+  primaryBtnText: { color: '#0f172a', fontWeight: '800' },
+  secondaryBtn: { backgroundColor: 'rgba(96,165,250,0.15)', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 8, marginTop: 6 },
+  secondaryBtnText: { color: '#1e40af', fontWeight: '700' },
+  link: { color: '#2563eb', fontWeight: '700', textDecorationLine: 'underline' },
+
+  mapWrap: { height: 200, borderRadius: 12, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.6)' },
+  legendRow: { flexDirection:'row', alignItems:'center', gap:8, marginTop: 8, flexWrap:'wrap' },
+  legendDot: { width: 10, height: 10, borderRadius: 5 },
+  legendText: { color: '#334155' },
+
+  noticeItem: { padding: 10, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.7)' },
+  noticeTime: { fontSize: 12, color: '#64748b', marginBottom: 4 },
+  noticeMsg: { color: '#0f172a' },
+
+  analyticsRow: { flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginTop: 12 },
+  gaugeWrap: { alignItems:'center', justifyContent:'center' },
+  gaugeCircle: { width: 80, height: 80, borderRadius: 40, borderWidth: 8, borderColor: '#60a5fa', alignItems:'center', justifyContent:'center', backgroundColor:'rgba(255,255,255,0.6)' },
+  gaugeText: { fontWeight:'800', color:'#0f172a' },
+  donutRow: { flexDirection:'row', gap: 12 },
+  donut: { width: 40, height: 40, borderRadius: 20, borderWidth: 6, backgroundColor:'transparent' },
+
+  input: { padding: 10, backgroundColor:'rgba(255,255,255,0.8)', borderRadius: 10, color:'#0f172a' },
+  webInput: { padding: 10, background: 'rgba(255,255,255,0.8)', borderRadius: 10, border: '1px solid rgba(148,163,184,0.35)' },
+
+  // Table styles
+  table: { width:'100%', borderRadius: 12, overflow:'hidden', ...Platform.select({ web: { border: '1px solid rgba(148,163,184,0.35)' }, default: {} }) },
+  tableHeader: { flexDirection:'row', backgroundColor:'rgba(255,255,255,0.8)', paddingVertical:12, paddingHorizontal:16 },
+  tableRow: { flexDirection:'row', backgroundColor:'rgba(255,255,255,0.6)', paddingVertical:12, paddingHorizontal:16, borderBottomWidth: Platform.OS==='web'?0:StyleSheet.hairlineWidth, borderBottomColor: 'rgba(148,163,184,0.25)' },
+  th: { color:'#334155', fontWeight:'800' },
+  td: { color:'#0f172a' },
+
+  // Sidebar (filters)
+  backdrop: { position:'fixed', top:0, left:0, right:0, bottom:0, backgroundColor:'rgba(15,23,42,0.4)', zIndex:1000 },
+  sidebar: { position:'absolute', right:0, top:0, height:'100vh', width:380, backgroundColor:'#ffffff', boxShadow:'-4px 0 24px rgba(2,6,23,0.1)' },
+  foldHandle: { position:'absolute', left:-24, top:'50%', marginTop:-20, width:24, height:40, borderTopLeftRadius:4, borderBottomLeftRadius:4, backgroundColor:'#64748b', alignItems:'center', justifyContent:'center' },
+  sidebarHeader: { flexDirection:'row', justifyContent:'space-between', alignItems:'center', padding:16, borderBottomWidth:1, borderBottomColor:'#e5e7eb', backgroundColor:'#f8fafc' },
+  sidebarTitle: { fontSize:18, fontWeight:'800', color:'#0f172a' },
+  closeBtn: { padding:8, borderRadius:4, backgroundColor:'#ef4444' },
+  closeBtnText: { color:'#fff', fontWeight:'800' },
+  sidebarContent: { padding:16, gap:24 },
+  filterSection: { gap:8 },
+  sectionTitle: { fontSize:16, fontWeight:'800', color:'#0f172a', marginBottom:8 },
+  dateRow: { flexDirection:'row', alignItems:'center', gap:8, marginBottom:8 },
+  dateLabel: { minWidth: 40, color:'#475569' },
+  dateInput: { flex:1, padding:8, border:'1px solid #d1d5db', borderRadius:4 },
+  select: { width:'100%', padding:8, border:'1px solid #d1d5db', borderRadius:4, marginBottom:8 },
+  textInput: { width:'100%', padding:8, border:'1px solid #d1d5db', borderRadius:4, marginBottom:8 },
+  hint: { fontSize:12, color:'#6b7280', marginTop:4 },
+  chartTitle: { fontSize:14, fontWeight:'700', color:'#0f172a', marginBottom:8 },
+  chartBar: { height:20, flexDirection:'row', backgroundColor:'rgba(148,163,184,0.25)', borderRadius:4, overflow:'hidden', marginBottom:4 },
+  chartSegment: { height:'100%' },
+  chartLabel: { fontSize:12, color:'#475569' },
 });
