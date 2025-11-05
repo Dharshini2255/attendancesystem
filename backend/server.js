@@ -611,6 +611,35 @@ app.get('/admin/notifications', async (_req, res) => {
   }
 });
 
+// User admin APIs
+app.patch('/admin/user', async (req, res) => {
+  try {
+    const { _id, name, class: className, year, phone, email } = req.body || {};
+    if (!_id) return res.status(400).json({ error: 'Missing _id' });
+    const u = await Student.findById(_id);
+    if (!u) return res.status(404).json({ error: 'User not found' });
+    if (name != null) u.name = name;
+    if (className != null) u.class = className;
+    if (year != null) u.year = Number(year);
+    if (phone != null) u.phone = phone;
+    if (email != null) u.email = email;
+    await u.save();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Admin user patch error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+app.delete('/admin/user/:id', async (req, res) => {
+  try {
+    await Student.findByIdAndDelete(req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Admin user delete error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // List all users
 app.get('/admin/users', async (req, res) => {
   try {
@@ -789,6 +818,75 @@ app.get('/admin/pings', async (req, res) => {
     res.json(pings);
   } catch (err) {
     console.error('Admin pings error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Ping admin actions
+app.delete('/admin/ping/:id', async (req, res) => {
+  try {
+    const p = await Ping.findById(req.params.id);
+    if (!p) return res.json({ ok: true });
+    const studentId = String(p.studentId);
+    const d = new Date(p.timestamp).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    await Ping.deleteOne({ _id: p._id });
+    await recomputeAttendanceFor(studentId, d);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Admin ping delete error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Helper to recompute attendance from pings
+async function recomputeAttendanceFor(studentId, dateStr) {
+  const student = await Student.findById(studentId);
+  if (!student) return;
+  const settings = await AdminSettings.findOne({ key: 'global' }).lean();
+  const collegeDefault = { latitude: 12.8005328, longitude: 80.0388091 };
+  const collegeAnchor = settings?.collegeLocation?.latitude ? settings.collegeLocation : collegeDefault;
+  const proximityAnchor = settings?.proximityLocation;
+  const proximityRadius = Number(settings?.proximityRadiusMeters || 100);
+  const MAX_RADIUS_METERS = parseInt(process.env.MAX_RADIUS_METERS || '50000', 10);
+  const toRad = (v)=> (v*Math.PI)/180; const R=6371000;
+  const dist=(a,b)=>{ const dLat=toRad(a.latitude-b.latitude), dLon=toRad(a.longitude-b.longitude); const lat1=toRad(b.latitude), lat2=toRad(a.latitude); const h=Math.sin(dLat/2)**2+Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2; return 2*R*Math.atan2(Math.sqrt(h),Math.sqrt(1-h)); };
+  const pinPoly=(pt,poly)=>{ if(!poly||poly.length<3) return false; let inside=false; for(let i=0,j=poly.length-1;i<poly.length;j=i++){const xi=poly[i].latitude, yi=poly[i].longitude; const xj=poly[j].latitude, yj=poly[j].longitude; const intersect=((yi>pt.longitude)!==(yj>pt.longitude)) && (pt.latitude < (xj - xi) * (pt.longitude - yi) / (yj - yi + 1e-12) + xi); if(intersect) inside=!inside;} return inside; };
+  const startDate = new Date(`${dateStr}T00:00:00+05:30`);
+  const endDate = new Date(`${dateStr}T23:59:59+05:30`);
+  const pings = await Ping.find({ studentId, timestamp: { $gte: startDate, $lte: endDate } }).sort({ timestamp: 1 }).lean();
+  const per = {}; // period -> valid pings, biometric flag
+  for (const p of pings) {
+    const loc = { latitude: p.location?.latitude, longitude: p.location?.longitude };
+    let byCollege=false; if (settings?.useCollegeLocation){ byCollege = Array.isArray(settings?.collegePolygon) && settings.collegePolygon.length>=3 ? pinPoly(loc, settings.collegePolygon) : (dist(loc, collegeAnchor)<=MAX_RADIUS_METERS); }
+    let byProx=false; if (proximityAnchor) byProx = dist(loc, proximityAnchor) <= proximityRadius && !!student.loggedIn;
+    if (Array.isArray(settings?.proximityAnchors)) { for (const a of settings.proximityAnchors) { if (a?.location?.latitude && dist(loc,a.location)<= (a.radiusMeters||proximityRadius)) { byProx=true; break; } } }
+    if (!(byCollege || byProx)) continue;
+    const k = Number(p.periodNumber)||1;
+    if (!per[k]) per[k] = { count:0, biometric:false };
+    per[k].count += 1; if (p.biometricVerified) per[k].biometric = true;
+  }
+  const threshold = Number(settings?.pingThresholdPerPeriod || 4);
+  let attendance = await Attendance.findOne({ studentId, date: dateStr });
+  if (!attendance) attendance = new Attendance({ studentId, date: dateStr, studentName: student.name, regNo: student.regNo, class: student.class, year: student.year, periods: [] });
+  const out = [];
+  for (let k=1;k<=8;k++) {
+    if (per[k] && per[k].count >= threshold && per[k].biometric && student.biometricEnrolled) {
+      out.push({ periodNumber: k, status: 'present' });
+    }
+  }
+  attendance.periods = out;
+  await attendance.save();
+}
+
+app.post('/admin/recompute-attendance', async (req, res) => {
+  try {
+    const { studentId, date } = req.body || {};
+    if (!studentId) return res.status(400).json({ error: 'studentId required' });
+    const d = date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    await recomputeAttendanceFor(studentId, d);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Admin recompute error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });

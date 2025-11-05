@@ -319,11 +319,22 @@ export default function AdminDashboard() {
                   <Text style={[styles.th, { flex: 1 }]}>Status</Text>
                 </View>
                 {pings.slice(0,20).map((p,i)=> (
-                  <View key={i} style={styles.tableRow}>
+                  <View key={i} style={[styles.tableRow, { alignItems:'center' }]}>
                     <Text style={[styles.td,{flex:2}]}>{new Date(p.timestamp).toLocaleString()}</Text>
                     <Text style={[styles.td,{flex:2}]}>{p.studentName||''} ({p.regNo||''})</Text>
                     <Text style={[styles.td,{flex:1}]}>{p.periodNumber||''}</Text>
-                    <Text style={[styles.td,{flex:1}]}>{p.biometricVerified? 'verified' : (p.timestampType||'')}</Text>
+                    <View style={{ flexDirection:'row', alignItems:'center', gap:8, flex:1 }}>
+                      <Text style={[styles.td]}>{p.biometricVerified? 'verified' : (p.timestampType||'')}</Text>
+                      <TouchableOpacity onPress={async()=>{
+                        try {
+                          await fetch(`${api}/admin/ping/${encodeURIComponent(p._id)}`, { method: 'DELETE' });
+                          await loadPings();
+                          await loadAttendance();
+                        } catch {}
+                      }} style={[styles.secondaryBtn,{backgroundColor:'rgba(239,68,68,0.2)', paddingVertical:4,paddingHorizontal:8}]}>
+                        <Text style={[styles.secondaryBtnText,{color:'#ef4444'}]}>Delete</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 ))}
               </TableContainer>
@@ -401,7 +412,7 @@ export default function AdminDashboard() {
                     <Text style={[styles.th, { flex: 1.5 }]}>Username</Text>
                   </View>
                   {users.map((u, i) => (
-                    <View key={u._id || i} style={styles.tableRow}>
+                    <View key={u._id || i} style={[styles.tableRow, { alignItems:'center' }]}>
                       <TouchableOpacity style={{ flex: 2 }} onPress={async ()=>{
                         setHistoryUser(u);
                         setHistoryOpen(true);
@@ -423,6 +434,29 @@ export default function AdminDashboard() {
                       <Text style={[styles.td, { flex: 0.8 }]}>{u.year}</Text>
                       <Text style={[styles.td, { flex: 2.5 }]}>{u.email}</Text>
                       <Text style={[styles.td, { flex: 1.5 }]}>{u.username}</Text>
+                      <View style={{ flexDirection:'row', gap:8, marginLeft: 8 }}>
+                        <TouchableOpacity onPress={async()=>{
+                          try {
+                            const newClass = Platform.OS==='web' ? window.prompt('Class', u.class||'') : u.class;
+                            const newYearStr = Platform.OS==='web' ? window.prompt('Year (1-4)', String(u.year||'')) : String(u.year||'');
+                            if (Platform.OS==='web') {
+                              await fetch(`${api}/admin/user`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ _id: u._id, class: newClass, year: Number(newYearStr||u.year) }) });
+                              await loadUsers();
+                            }
+                          } catch {}
+                        }} style={[styles.secondaryBtn,{paddingVertical:4,paddingHorizontal:8}]}>
+                          <Text style={styles.secondaryBtnText}>Edit</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={async()=>{
+                          try {
+                            if (Platform.OS==='web' && !window.confirm('Delete user?')) return;
+                            await fetch(`${api}/admin/user/${encodeURIComponent(u._id)}`, { method:'DELETE' });
+                            await loadUsers();
+                          } catch {}
+                        }} style={[styles.secondaryBtn,{backgroundColor:'rgba(239,68,68,0.2)', paddingVertical:4,paddingHorizontal:8}]}>
+                          <Text style={[styles.secondaryBtnText,{color:'#ef4444'}]}>Delete</Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   ))}
                 </TableContainer>
@@ -889,12 +923,26 @@ export default function AdminDashboard() {
                     let inLive = false; if(singleAnchor?.latitude){ inLive = dist(loc, singleAnchor)<=singleR; }
                     for(const a of liveAnchors){ if(a?.location?.latitude && dist(loc,a.location)<= (a.radiusMeters||100)) { inLive=true; break; } }
                     rows.push(
-                      <View key={`${d}-${idx}`} style={styles.tableRow}>
+                      <View key={`${d}-${idx}`} style={[styles.tableRow, { alignItems:'center' }]}>
                         <Text style={[styles.td,{flex:1.2}]}>{d}</Text>
                         <Text style={[styles.td,{flex:1.2}]}>{idx+1}</Text>
                         <Text style={[styles.td,{flex:1.6}]}>{inCollege?'yes':'no'} | {inLive?'yes':'no'}</Text>
                         <Text style={[styles.td,{flex:0.8}]}>{p.periodNumber||''}</Text>
-                        <Text style={[styles.td,{flex:1.2}]}>{p.biometricVerified? 'present' : 'present'}</Text>
+                        <View style={{ flexDirection:'row', alignItems:'center', gap:8, flex:1.2 }}>
+                          <Text style={[styles.td]}>{p.biometricVerified? 'verified' : '-'}</Text>
+                          <TouchableOpacity onPress={async()=>{
+                            try {
+                              await fetch(`${api}/admin/ping/${encodeURIComponent(p._id)}`, { method:'DELETE' });
+                              // reload modal data
+                              try { const s2 = await fetch(`${api}/admin/settings`).then(r=>r.json()); setSettingsCache(s2); } catch {}
+                              try { const params = new URLSearchParams({ from: historyFrom, to: historyTo }); const res = await fetch(`${api}/admin/student/${encodeURIComponent(historyUser._id)}/history?${params}`); const detail=await res.json(); setHistoryData(detail || { records: [], pings: [] }); } catch {}
+                              await loadAttendance();
+                              await loadPings();
+                            } catch {}
+                          }} style={[styles.secondaryBtn,{backgroundColor:'rgba(239,68,68,0.2)', paddingVertical:4,paddingHorizontal:8}]}>
+                            <Text style={[styles.secondaryBtnText,{color:'#ef4444'}]}>Delete</Text>
+                          </TouchableOpacity>
+                        </View>
                       </View>
                     );
                   });
