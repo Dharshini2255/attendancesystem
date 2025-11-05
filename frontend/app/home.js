@@ -85,7 +85,10 @@ useEffect(() => {
       } catch {}
       // Initial load of today's attendance
       await refreshAttendance(parsedUser._id);
-      // Start background tracking safely
+      // Request location and start background tracking
+      try {
+        await Location.requestForegroundPermissionsAsync();
+      } catch {}
       try {
         await startBackgroundTracking();
       } catch (bgErr) {
@@ -107,9 +110,27 @@ useEffect(() => {
   if (!user) return;
   let timer = null;
   const stateRef = { perCounts: {}, lastPeriod: null };
+  const permRef = { granted: false };
+  let nextSettingsFetchAt = 0;
+
+  const ensurePermission = async () => {
+    if (permRef.granted) return true;
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      permRef.granted = status === 'granted';
+    } catch {}
+    if (!permRef.granted && Platform.OS === 'web' && navigator.geolocation) {
+      try {
+        await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(() => resolve(), reject));
+        permRef.granted = true;
+      } catch {}
+    }
+    if (!permRef.granted) Alert.alert('Location Required', 'Please enable location to send attendance pings.');
+    return permRef.granted;
+  };
 
   const getSettings = async () => {
-    try { const res = await fetch('https://attendancesystem-backend-mias.onrender.com/admin/settings'); settingsRef.current = await res.json(); } catch {}
+    try { const res = await fetch('https://attendancesystem-backend-mias.onrender.com/admin/settings'); settingsRef.current = await res.json(); nextSettingsFetchAt = Date.now() + 60000; } catch {}
   };
 
   const withinWindow = (now, s) => {
@@ -135,13 +156,21 @@ useEffect(() => {
   };
 
   const tick = async () => {
-    // Load settings on first tick
-    if (!settingsRef.current) await getSettings();
+    // Refresh settings if stale
+    if (!settingsRef.current || Date.now() > nextSettingsFetchAt) await getSettings();
     const s = settingsRef.current;
     if (!s) return;
 
+    // Apply scope filters: classes/years
+    if (Array.isArray(s.classes) && s.classes.length && !s.classes.includes(user.class)) return;
+    if (Array.isArray(s.years) && s.years.length && !s.years.includes(Number(user.year))) return;
+
     const now = new Date();
     if (!withinWindow(now, s)) return; // outside time window
+
+    // ensure permission
+    const ok = await ensurePermission();
+    if (!ok) return;
 
     const period = currentPeriod(now, s);
     if (stateRef.lastPeriod !== period) stateRef.perCounts = {};
@@ -211,6 +240,7 @@ useEffect(() => {
   };
 
   const start = async () => {
+    await ensurePermission();
     await getSettings();
     const s = settingsRef.current || {};
     const ms = Math.max(5000, Number(s.pingIntervalMs || 60000));

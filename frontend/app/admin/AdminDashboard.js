@@ -202,6 +202,28 @@ export default function AdminDashboard() {
     <BlurView intensity={Platform.OS==='web' ? 0 : 40} tint="light" style={[styles.card, style]}>{children}</BlurView>
   );
 
+  // Auto-refresh key sections
+  useEffect(() => {
+    let iv;
+    if (tab === 'attendance') {
+      iv = setInterval(() => { loadAttendance(); loadUsers(); }, 10000);
+    } else if (tab === 'dashboard') {
+      iv = setInterval(() => { loadPings(); loadNotifications(); loadSessions(); }, 10000);
+    }
+    return () => { if (iv) clearInterval(iv); };
+  }, [tab]);
+
+  useEffect(() => {
+    let iv;
+    if (historyOpen && historyUser?._id) {
+      iv = setInterval(async () => {
+        try { const s = await fetch(`${api}/admin/settings`).then(r=>r.json()); setSettingsCache(s); } catch {}
+        try { const params = new URLSearchParams({ from: historyFrom, to: historyTo }); const res = await fetch(`${api}/admin/student/${encodeURIComponent(historyUser._id)}/history?${params}`); const detail=await res.json(); setHistoryData(detail || { records: [], pings: [] }); } catch {}
+      }, 10000);
+    }
+    return () => { if (iv) clearInterval(iv); };
+  }, [historyOpen, historyUser, historyFrom, historyTo]);
+
   const TableContainer = ({ children, minWidth = 820 }) => {
     if (Platform.OS === 'web' && !isSmall) {
       return <View style={styles.table}>{children}</View>;
@@ -513,18 +535,18 @@ export default function AdminDashboard() {
 
                 <Text style={styles.muted}>Class</Text>
 {Platform.OS==='web' ? (
-                  <input value={settings.class||''} onChange={e=>setSettings(prev => ({ ...prev, class: e.target.value }))} style={styles.webInput} placeholder="e.g., CSE-A" />
+                  <input value={settings.class||''} onChange={e=>setSettings(prev => ({ ...prev, class: e.target.value, classes: e.target.value ? [e.target.value] : [] }))} style={styles.webInput} placeholder="e.g., CSE 1" />
                 ) : (
-                  <TextInput value={settings.class||''} onChangeText={t=>setSettings(prev => ({...prev, class:t}))} style={styles.input} placeholder="e.g., CSE-A" />
+                  <TextInput value={settings.class||''} onChangeText={t=>setSettings(prev => ({...prev, class:t, classes: t ? [t] : []}))} style={styles.input} placeholder="e.g., CSE 1" />
                 )}
 
                 <Text style={styles.muted}>Year</Text>
-                {Platform.OS==='web' ? (
-                  <select value={String(settings.year||'')} onChange={e=>setSettings({ ...settings, year: Number(e.target.value) })} style={styles.webInput}>
+{Platform.OS==='web' ? (
+                  <select value={String(settings.year||'')} onChange={e=>setSettings(prev => ({ ...prev, year: Number(e.target.value), years: [Number(e.target.value)] }))} style={styles.webInput}>
                     {[1,2,3,4].map(y=> <option key={y} value={y}>{y}</option>)}
                   </select>
                 ) : (
-                  <TextInput value={String(settings.year||'')} onChangeText={t=>setSettings({...settings, year: Number(t||0)})} style={styles.input} placeholder="1-4" />
+                  <TextInput value={String(settings.year||'')} onChangeText={t=>setSettings(prev => ({...prev, year: Number(t||0), years: [Number(t||0)]}))} style={styles.input} placeholder="1-4" />
                 )}
 
                 <Text style={styles.muted}>Location Options</Text>
