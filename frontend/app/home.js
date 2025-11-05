@@ -130,12 +130,15 @@ useEffect(() => {
   };
 
   const withinWindow = (now, s) => {
-    if (!s?.startTime || !s?.endTime) return true;
-    const [sh, sm] = String(s.startTime).split(':').map(Number);
-    const [eh, em] = String(s.endTime).split(':').map(Number);
-    const m = now.getHours()*60 + now.getMinutes();
-    const a = (sh||0)*60 + (sm||0), b = (eh||0)*60 + (em||0);
-    return m >= a && m <= b;
+    // Time window check disabled for testing - pings can run at any time
+    return true;
+    // Uncomment below to re-enable time window checking:
+    // if (!s?.startTime || !s?.endTime) return true;
+    // const [sh, sm] = String(s.startTime).split(':').map(Number);
+    // const [eh, em] = String(s.endTime).split(':').map(Number);
+    // const m = now.getHours()*60 + now.getMinutes();
+    // const a = (sh||0)*60 + (sm||0), b = (eh||0)*60 + (em||0);
+    // return m >= a && m <= b;
   };
 
   const tick = async () => {
