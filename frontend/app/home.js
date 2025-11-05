@@ -91,7 +91,145 @@ useEffect(() => {
   loadUser();
 }, []);
 
-// Removed admin-driven auto pinger as requested
+// Auto pinger driven by Admin Settings (time window, pingIntervalMs, threshold)
+useEffect(() => {
+  if (!user) return;
+  let timer = null;
+  const stateRef = { perCounts: {}, lastPeriod: null };
+  const permRef = { granted: false };
+  let nextSettingsFetchAt = 0;
+
+  const ensurePermission = async () => {
+    if (permRef.granted) return true;
+    try { const { status } = await Location.requestForegroundPermissionsAsync(); permRef.granted = status === 'granted'; } catch {}
+    if (!permRef.granted && Platform.OS === 'web' && navigator.geolocation) {
+      try { await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(() => resolve(), reject)); permRef.granted = true; } catch {}
+    }
+    if (!permRef.granted) Alert.alert('Location Required', 'Please enable location to send attendance pings.');
+    return permRef.granted;
+  };
+
+  const getSettings = async () => {
+    try { const res = await fetch('https://attendancesystem-backend-mias.onrender.com/admin/settings'); settingsRef.current = await res.json(); nextSettingsFetchAt = Date.now() + 60000; } catch {}
+  };
+
+  const withinWindow = (now, s) => {
+    if (!s?.startTime || !s?.endTime) return true;
+    const [sh, sm] = String(s.startTime).split(':').map(Number);
+    const [eh, em] = String(s.endTime).split(':').map(Number);
+    const m = now.getHours()*60 + now.getMinutes();
+    const a = (sh||0)*60 + (sm||0), b = (eh||0)*60 + (em||0);
+    return m >= a && m <= b;
+  };
+  const currentPeriod = (now, s) => {
+    if (!s?.startTime || !s?.endTime) return 1;
+    const [sh, sm] = String(s.startTime).split(':').map(Number);
+    const [eh, em] = String(s.endTime).split(':').map(Number);
+    const startM = (sh||0)*60 + (sm||0);
+    const endM = (eh||0)*60 + (em||0);
+    const total = Math.max(1, endM - startM);
+    const slot = Math.max(1, Math.round(total / 8));
+    const nowM = now.getHours()*60 + now.getMinutes();
+    const idx = Math.min(7, Math.max(0, Math.floor((nowM - startM) / slot)));
+    return idx + 1;
+  };
+
+  const tick = async () => {
+    if (!settingsRef.current || Date.now() > nextSettingsFetchAt) await getSettings();
+    const s = settingsRef.current;
+    if (!s) return;
+
+    // Scope enforcement (class/year)
+    if (Array.isArray(s.classes) && s.classes.length && !s.classes.includes(user.class)) return;
+    if (Array.isArray(s.years) && s.years.length && !s.years.includes(Number(user.year))) return;
+
+    const ok = await ensurePermission();
+    if (!ok) return;
+
+    const now = new Date();
+    if (!withinWindow(now, s)) return;
+
+    const period = currentPeriod(now, s);
+    if (stateRef.lastPeriod !== period) stateRef.perCounts = {};
+    stateRef.lastPeriod = period;
+
+    const threshold = Math.max(1, Number(s.pingThresholdPerPeriod || 4));
+    const count = stateRef.perCounts[period] || 0;
+    if (count >= threshold) return;
+
+    // Determine biometric trigger (optional)
+    let doBiometric = false;
+    const mode = s.biometricTriggerMode || 'pingNumber';
+    if (mode === 'pingNumber') {
+      const atN = Math.min(Math.max(1, Number(s.biometricAtPingNumber || 1)), threshold);
+      doBiometric = (count + 1) === atN;
+    } else if (mode === 'time') {
+      const m = now.getHours()*60 + now.getMinutes();
+      const windows = s.biometricTimeWindows || [];
+      doBiometric = windows.some(w => {
+        const [sh,sm] = String(w.start||'').split(':').map(Number);
+        const [eh,em] = String(w.end||'').split(':').map(Number);
+        const a = (sh||0)*60 + (sm||0);
+        const b = (eh||0)*60 + (em||0);
+        return m >= a && m <= b;
+      });
+    } else if (mode === 'period') {
+      const list = s.biometricPeriods || [];
+      doBiometric = list.includes(period) && (count === 0);
+    }
+
+    // Get location
+    let loc;
+    try { loc = await Location.getCurrentPositionAsync({}); } catch {
+      if (Platform.OS === 'web' && navigator.geolocation) {
+        try { loc = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition((p)=>resolve({ coords: { latitude: p.coords.latitude, longitude: p.coords.longitude } }), reject)); } catch {}
+      }
+    }
+    if (!loc) return;
+
+    // Optional biometric auth on device
+    let biometricVerified = false;
+    if (doBiometric) {
+      try {
+        if (typeof LocalAuthentication?.authenticateAsync === 'function') {
+          const res = await LocalAuthentication.authenticateAsync({ promptMessage: 'Verify identity' });
+          biometricVerified = !!res.success;
+        } else if (Platform.OS === 'web') {
+          biometricVerified = window.confirm('Biometric challenge: confirm to proceed');
+        }
+      } catch {}
+    }
+
+    try {
+      await fetch('https://attendancesystem-backend-mias.onrender.com/attendance/mark', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          studentId: user._id,
+          periodNumber: period,
+          timestampType: ['start','afterStart15','beforeEnd10','end'][Math.min(count,3)],
+          location: { latitude: loc.coords.latitude, longitude: loc.coords.longitude },
+          biometricType: doBiometric ? 'fingerprint' : null,
+          biometricVerified
+        })
+      });
+      stateRef.perCounts[period] = count + 1;
+      await refreshAttendance(user._id);
+    } catch {}
+  };
+
+  const start = async () => {
+    await ensurePermission();
+    await getSettings();
+    const s = settingsRef.current || {};
+    const ms = Math.max(5000, Number(s.pingIntervalMs || 60000));
+    timer = setInterval(tick, ms);
+    // immediate first ping after login
+    tick();
+  };
+
+  start();
+  return () => { if (timer) clearInterval(timer); };
+}, [user]);
 
 
   const calculateDistance = (loc1, loc2) => {
@@ -217,17 +355,12 @@ useEffect(() => {
             <Text style={styles.label}>UUID: <Text style={styles.value}>{user.uuid}</Text></Text>
           </View>
 
-          {/* Ping Buttons */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>📍 Ping Attendance</Text>
-            <View style={styles.buttonRow}>
-              <Button title="Start" onPress={() => sendPing(1, 'start')} />
-              <Button title="+5 min" onPress={() => sendPing(1, 'afterStart15')} />
-              <Button title="-5 min" onPress={() => sendPing(1, 'beforeEnd10')} />
-              <Button title="End" onPress={() => sendPing(1, 'end')} />
+          {/* Auto-pinging is controlled by Admin Settings; no manual buttons */}
+          {status ? (
+            <View style={styles.section}>
+              <Text style={styles.status}>{status}</Text>
             </View>
-            {status ? <Text style={styles.status}>{status}</Text> : null}
-          </View>
+          ) : null}
 
           {/* Current Day Attendance (visible after first attendance is marked) */}
           {attendance.length > 0 && (
