@@ -76,12 +76,10 @@ useEffect(() => {
       setUser(parsedUser);
       // Initial load of today's attendance
       await refreshAttendance(parsedUser._id);
-      // Start background tracking safely
-      try {
-        await startBackgroundTracking();
-      } catch (bgErr) {
-        console.warn('Background tracking failed to start:', bgErr);
-      }
+      // Background tracking disabled to avoid duplicate pings; auto-pinger handles sending
+      // (kept here commented intentionally)
+      // try { await startBackgroundTracking(); } catch {}
+      
     } catch (err) {
       console.error('Error reading user from storage:', err);
       router.replace('/login');
@@ -97,6 +95,7 @@ useEffect(() => {
   let timer = null;
   const stateRef = { perCounts: {}, lastPeriod: null };
   const permRef = { granted: false };
+  const sendingRef = { sending: false };
   let nextSettingsFetchAt = 0;
   stateRef.currentPeriod = 1;
 
@@ -136,7 +135,10 @@ useEffect(() => {
   };
 
   const tick = async () => {
-    if (!settingsRef.current || Date.now() > nextSettingsFetchAt) await getSettings();
+    if (sendingRef.sending) return;
+    sendingRef.sending = true;
+    try {
+      if (!settingsRef.current || Date.now() > nextSettingsFetchAt) await getSettings();
     const s = settingsRef.current;
     if (!s) return;
 
@@ -221,6 +223,9 @@ useEffect(() => {
       stateRef.perCounts[period] = count + 1;
       await refreshAttendance(user._id);
     } catch {}
+    finally {
+      sendingRef.sending = false;
+    }
   };
 
   const start = async () => {

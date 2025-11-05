@@ -316,12 +316,13 @@ app.post('/attendance/mark', async (req, res) => {
 
     const hasBiometric = validPings.some(p => p.biometricVerified === true);
 
-    if (!student.biometricEnrolled) {
+    const enforceBiometric = !!settings?.biometricEnforced;
+    if (enforceBiometric && !student.biometricEnrolled) {
       return res.status(403).json({ error: 'Biometric enrollment required. Please complete biometric setup.' });
     }
 
     const threshold = Number(settings?.pingThresholdPerPeriod || 4);
-    if (validPings.length >= threshold && hasBiometric) {
+    if (validPings.length >= threshold && (!enforceBiometric || hasBiometric)) {
       const todayLocal = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
       let attendance = await Attendance.findOne({ studentId, date: todayLocal });
 
@@ -492,6 +493,7 @@ app.get('/admin/settings', async (_req, res) => {
       biometricAtPingNumber: 1,
       biometricTimeWindows: [],
       biometricPeriods: [],
+      biometricEnforced: false,
     };
     res.json(s);
   } catch (err) {
@@ -882,13 +884,13 @@ async function recomputeAttendanceFor(studentId, dateStr) {
     per[k].count += 1; if (p.biometricVerified) per[k].biometric = true;
   }
   const threshold = Number(settings?.pingThresholdPerPeriod || 4);
+  const enforceBiometric = !!settings?.biometricEnforced;
   let attendance = await Attendance.findOne({ studentId, date: dateStr });
   if (!attendance) attendance = new Attendance({ studentId, date: dateStr, studentName: student.name, regNo: student.regNo, class: student.class, year: student.year, periods: [] });
   const out = [];
   for (let k=1;k<=8;k++) {
-    if (per[k] && per[k].count >= threshold && per[k].biometric && student.biometricEnrolled) {
-      out.push({ periodNumber: k, status: 'present' });
-    }
+    const ok = per[k] && per[k].count >= threshold && (!enforceBiometric || (per[k].biometric && student.biometricEnrolled));
+    if (ok) out.push({ periodNumber: k, status: 'present' });
   }
   attendance.periods = out;
   await attendance.save();
