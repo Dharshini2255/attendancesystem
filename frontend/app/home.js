@@ -168,7 +168,9 @@ useEffect(() => {
     // Determine biometric trigger (optional)
     let doBiometric = false;
     const mode = s.biometricTriggerMode || 'pingNumber';
-    if (mode === 'pingNumber') {
+    if (mode === 'off') {
+      doBiometric = false;
+    } else if (mode === 'pingNumber') {
       const atN = Math.min(Math.max(1, Number(s.biometricAtPingNumber || 1)), threshold);
       doBiometric = (count + 1) === atN;
     } else if (mode === 'time') {
