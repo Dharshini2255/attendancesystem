@@ -314,16 +314,16 @@ export default function AdminDashboard() {
               <TableContainer>
                 <View style={styles.tableHeader}>
                   <Text style={[styles.th, { flex: 2 }]}>Time</Text>
-                  <Text style={[styles.th, { flex: 1.5 }]}>Name</Text>
-                  <Text style={[styles.th, { flex: 1.2 }]}>Reg No</Text>
-                  <Text style={[styles.th, { flex: 1.2 }]}>Period</Text>
+                  <Text style={[styles.th, { flex: 2 }]}>Student</Text>
+                  <Text style={[styles.th, { flex: 1 }]}>Period</Text>
+                  <Text style={[styles.th, { flex: 1 }]}>Status</Text>
                 </View>
                 {pings.slice(0,20).map((p,i)=> (
                   <View key={i} style={styles.tableRow}>
                     <Text style={[styles.td,{flex:2}]}>{new Date(p.timestamp).toLocaleString()}</Text>
-                    <Text style={[styles.td,{flex:1.5}]}>{p.studentName||''}</Text>
-                    <Text style={[styles.td,{flex:1.2}]}>{p.regNo||''}</Text>
-                    <Text style={[styles.td,{flex:1.2}]}>{p.periodNumber||''} {p.timestampType||''}</Text>
+                    <Text style={[styles.td,{flex:2}]}>{p.studentName||''} ({p.regNo||''})</Text>
+                    <Text style={[styles.td,{flex:1}]}>{p.periodNumber||''}</Text>
+                    <Text style={[styles.td,{flex:1}]}>{p.biometricVerified? 'verified' : (p.timestampType||'')}</Text>
                   </View>
                 ))}
               </TableContainer>

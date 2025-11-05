@@ -98,6 +98,7 @@ useEffect(() => {
   const stateRef = { perCounts: {}, lastPeriod: null };
   const permRef = { granted: false };
   let nextSettingsFetchAt = 0;
+  stateRef.currentPeriod = 1;
 
   const ensurePermission = async () => {
     if (permRef.granted) return true;
@@ -149,13 +150,18 @@ useEffect(() => {
     const now = new Date();
     if (!withinWindow(now, s)) return;
 
-    const period = currentPeriod(now, s);
-    if (stateRef.lastPeriod !== period) stateRef.perCounts = {};
-    stateRef.lastPeriod = period;
-
+    // Determine working period: sequential, not time-sliced
     const threshold = Math.max(1, Number(s.pingThresholdPerPeriod || 4));
+    const period = stateRef.currentPeriod || 1;
+    if (period > 8) return; // done for the day
+
     const count = stateRef.perCounts[period] || 0;
-    if (count >= threshold) return;
+    if (count >= threshold) {
+      // advance to next period and reset count; next tick will send
+      stateRef.currentPeriod = Math.min(8, period + 1);
+      stateRef.perCounts[stateRef.currentPeriod] = 0;
+      return;
+    }
 
     // Determine biometric trigger (optional)
     let doBiometric = false;
@@ -220,6 +226,15 @@ useEffect(() => {
   const start = async () => {
     await ensurePermission();
     await getSettings();
+    // Seed currentPeriod from today's attendance (max present period + 1)
+    try {
+      const res = await fetch(`https://attendancesystem-backend-mias.onrender.com/attendance/today/${user._id}`);
+      const data = await res.json();
+      const periods = Array.isArray(data?.periods) ? data.periods : [];
+      let maxP = 0; for (const p of periods) { if (p.status==='present') maxP = Math.max(maxP, Number(p.periodNumber)||0); }
+      stateRef.currentPeriod = Math.min(8, Math.max(1, maxP + 1));
+      stateRef.perCounts = {}; // fresh counts for the next period
+    } catch {}
     const s = settingsRef.current || {};
     const ms = Math.max(5000, Number(s.pingIntervalMs || 60000));
     timer = setInterval(tick, ms);
