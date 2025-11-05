@@ -505,17 +505,17 @@ export default function AdminDashboard() {
                   ))}
                 </View>
                 <Text style={styles.muted}>Department</Text>
-                {Platform.OS==='web' ? (
-                  <input value={settings.department||''} onChange={e=>setSettings({ ...settings, department: e.target.value })} style={styles.webInput} placeholder="Department" />
+{Platform.OS==='web' ? (
+                  <input value={settings.department||''} onChange={e=>setSettings(prev => ({ ...prev, department: e.target.value }))} style={styles.webInput} placeholder="Department" />
                 ) : (
-                  <TextInput value={settings.department||''} onChangeText={t=>setSettings({...settings, department:t})} style={styles.input} placeholder="Department" />
+                  <TextInput value={settings.department||''} onChangeText={t=>setSettings(prev => ({...prev, department:t}))} style={styles.input} placeholder="Department" />
                 )}
 
                 <Text style={styles.muted}>Class</Text>
-                {Platform.OS==='web' ? (
-                  <input value={settings.class||''} onChange={e=>setSettings({ ...settings, class: e.target.value })} style={styles.webInput} placeholder="e.g., CSE-A" />
+{Platform.OS==='web' ? (
+                  <input value={settings.class||''} onChange={e=>setSettings(prev => ({ ...prev, class: e.target.value }))} style={styles.webInput} placeholder="e.g., CSE-A" />
                 ) : (
-                  <TextInput value={settings.class||''} onChangeText={t=>setSettings({...settings, class:t})} style={styles.input} placeholder="e.g., CSE-A" />
+                  <TextInput value={settings.class||''} onChangeText={t=>setSettings(prev => ({...prev, class:t}))} style={styles.input} placeholder="e.g., CSE-A" />
                 )}
 
                 <Text style={styles.muted}>Year</Text>
@@ -839,13 +839,36 @@ export default function AdminDashboard() {
               {(historyData.records||[]).map((r,i)=>{
                 const statusByPeriod = {};
                 (r.periods||[]).forEach(p=>{ statusByPeriod[p.periodNumber]=p.status; });
-                const overall = (r.periods||[]).every(p=>p.status==='present') ? 'present' : ((r.periods||[]).some(p=>p.status==='present')?'partial':'absent');
+                // Determine login-aware start period for this date
+                let startPeriod = 1;
+                try {
+                  const loginAt = historyUser?.lastLoginAt ? new Date(historyUser.lastLoginAt) : null;
+                  const loginDateStr = loginAt ? loginAt.toLocaleDateString('en-CA') : null;
+                  const s = settingsCache||{};
+                  if (loginAt && loginDateStr === r.date && s?.startTime && s?.endTime) {
+                    const [sh, sm] = String(s.startTime).split(':').map(Number);
+                    const [eh, em] = String(s.endTime).split(':').map(Number);
+                    const startM = (sh||0)*60 + (sm||0);
+                    const endM = (eh||0)*60 + (em||0);
+                    const total = Math.max(1, endM - startM);
+                    const slot = Math.max(1, Math.round(total / 8));
+                    const lm = loginAt.getHours()*60 + loginAt.getMinutes();
+                    const idx = Math.min(7, Math.max(0, Math.floor((lm - startM) / slot)));
+                    startPeriod = isNaN(idx) ? 1 : (idx + 1);
+                  }
+                } catch {}
+                // Compute overall considering only periods from startPeriod
+                const presentSet = new Set((r.periods||[]).filter(p=>p.periodNumber>=startPeriod && p.status==='present').map(p=>p.periodNumber));
+                let overall = 'present';
+                for (let k=startPeriod; k<=8; k++) { if (!presentSet.has(k)) { overall = presentSet.size>0 ? 'partial' : 'absent'; break; } }
                 return (
                   <View key={i} style={styles.tableRow}>
                     <Text style={[styles.td,{flex:1.2}]}>{r.date}</Text>
-                    {Array.from({length:8}).map((_,idx)=> (
-                      <Text key={idx} style={[styles.td,{flex:1}]}>{statusByPeriod[idx+1]||'-'}</Text>
-                    ))}
+                    {Array.from({length:8}).map((_,idx)=> {
+                      const pnum = idx+1;
+                      const val = pnum < startPeriod ? '-' : (statusByPeriod[pnum]||'-');
+                      return (<Text key={idx} style={[styles.td,{flex:1}]}>{val}</Text>);
+                    })}
                     <Text style={[styles.td,{flex:1.5}]}>{overall}</Text>
                   </View>
                 );

@@ -28,6 +28,7 @@ export default function HomeScreen() {
   const [attendance, setAttendance] = useState([]);
   const [attendanceDate, setAttendanceDate] = useState('');
   const settingsRef = useRef(null);
+  const [loginAt, setLoginAt] = useState(null);
 
   const refreshAttendance = async (id) => {
     try {
@@ -74,6 +75,14 @@ useEffect(() => {
       }
       const parsedUser = JSON.parse(storedUser);
       setUser(parsedUser);
+      try {
+        // refresh user info to get lastLoginAt
+        if (parsedUser?.username) {
+          const ures = await fetch(`https://attendancesystem-backend-mias.onrender.com/userinfo?username=${encodeURIComponent(parsedUser.username)}`);
+          const u = await ures.json();
+          if (u?.lastLoginAt) setLoginAt(new Date(u.lastLoginAt));
+        }
+      } catch {}
       // Initial load of today's attendance
       await refreshAttendance(parsedUser._id);
       // Start background tracking safely
@@ -92,6 +101,126 @@ useEffect(() => {
 }, []);
 
 // Removed admin-driven auto pinger as requested
+
+// Auto pinger based on AdminSettings (pingIntervalMs, start/end times)
+useEffect(() => {
+  if (!user) return;
+  let timer = null;
+  const stateRef = { perCounts: {}, lastPeriod: null };
+
+  const getSettings = async () => {
+    try { const res = await fetch('https://attendancesystem-backend-mias.onrender.com/admin/settings'); settingsRef.current = await res.json(); } catch {}
+  };
+
+  const withinWindow = (now, s) => {
+    if (!s?.startTime || !s?.endTime) return true;
+    const [sh, sm] = String(s.startTime).split(':').map(Number);
+    const [eh, em] = String(s.endTime).split(':').map(Number);
+    const m = now.getHours() * 60 + now.getMinutes();
+    const a = (sh||0)*60 + (sm||0); const b = (eh||0)*60 + (em||0);
+    return m >= a && m <= b;
+  };
+
+  const currentPeriod = (now, s) => {
+    if (!s?.startTime || !s?.endTime) return 1;
+    const [sh, sm] = String(s.startTime).split(':').map(Number);
+    const [eh, em] = String(s.endTime).split(':').map(Number);
+    const startM = (sh||0)*60 + (sm||0);
+    const endM = (eh||0)*60 + (em||0);
+    const total = Math.max(1, endM - startM);
+    const slot = Math.max(1, Math.round(total / 8));
+    const nowM = now.getHours()*60 + now.getMinutes();
+    const idx = Math.min(7, Math.max(0, Math.floor((nowM - startM) / slot)));
+    return idx + 1;
+  };
+
+  const tick = async () => {
+    // Load settings on first tick
+    if (!settingsRef.current) await getSettings();
+    const s = settingsRef.current;
+    if (!s) return;
+
+    const now = new Date();
+    if (!withinWindow(now, s)) return; // outside time window
+
+    const period = currentPeriod(now, s);
+    if (stateRef.lastPeriod !== period) stateRef.perCounts = {};
+    stateRef.lastPeriod = period;
+
+    const threshold = Math.max(1, Number(s.pingThresholdPerPeriod || 4));
+    const count = stateRef.perCounts[period] || 0;
+    if (count >= threshold) return; // enough pings for this period
+
+    // Determine biometric
+    let doBiometric = false;
+    const mode = s.biometricTriggerMode || 'pingNumber';
+    if (mode === 'pingNumber') {
+      const atN = Math.min(Math.max(1, Number(s.biometricAtPingNumber || 1)), threshold);
+      doBiometric = (count + 1) === atN;
+    } else if (mode === 'time') {
+      const m = now.getHours()*60 + now.getMinutes();
+      const windows = s.biometricTimeWindows || [];
+      doBiometric = windows.some(w => {
+        const [sh,sm] = String(w.start||'').split(':').map(Number);
+        const [eh,em] = String(w.end||'').split(':').map(Number);
+        const a = (sh||0)*60 + (sm||0);
+        const b = (eh||0)*60 + (em||0);
+        return m >= a && m <= b;
+      });
+    } else if (mode === 'period') {
+      const list = s.biometricPeriods || [];
+      doBiometric = list.includes(period) && (count === 0);
+    }
+
+    // Get location
+    let loc;
+    try { loc = await Location.getCurrentPositionAsync({}); } catch {
+      if (Platform.OS === 'web' && navigator.geolocation) {
+        try { loc = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition((p)=>resolve({ coords: { latitude: p.coords.latitude, longitude: p.coords.longitude } }), reject)); } catch {}
+      }
+    }
+    if (!loc) return;
+
+    let biometricVerified = false;
+    if (doBiometric) {
+      try {
+        if (typeof LocalAuthentication?.authenticateAsync === 'function') {
+          const res = await LocalAuthentication.authenticateAsync({ promptMessage: 'Verify identity' });
+          biometricVerified = !!res.success;
+        } else if (Platform.OS === 'web') {
+          biometricVerified = window.confirm('Biometric challenge: confirm to proceed');
+        }
+      } catch {}
+    }
+
+    try {
+      await fetch('https://attendancesystem-backend-mias.onrender.com/attendance/mark', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          studentId: user._id,
+          periodNumber: period,
+          timestampType: ['start','afterStart15','beforeEnd10','end'][Math.min(count,3)],
+          location: { latitude: loc.coords.latitude, longitude: loc.coords.longitude },
+          biometricType: doBiometric ? 'fingerprint' : null,
+          biometricVerified
+        })
+      });
+      stateRef.perCounts[period] = count + 1;
+      await refreshAttendance(user._id);
+    } catch {}
+  };
+
+  const start = async () => {
+    await getSettings();
+    const s = settingsRef.current || {};
+    const ms = Math.max(5000, Number(s.pingIntervalMs || 60000));
+    timer = setInterval(tick, ms);
+    tick();
+  };
+
+  start();
+  return () => { if (timer) clearInterval(timer); };
+}, [user]);
 
 
   const calculateDistance = (loc1, loc2) => {
@@ -225,12 +354,33 @@ useEffect(() => {
               (attendance || []).forEach(p => { map[p.periodNumber] = p.status; });
               const ord = ['1st','2nd','3rd','4th','5th','6th','7th','8th'];
               const lines = [];
+              // determine start period based on lastLoginAt and admin window
+              let startPeriod = 1;
+              try {
+                const s = settingsRef.current || {};
+                if (loginAt && s?.startTime && s?.endTime) {
+                  const [sh, sm] = String(s.startTime).split(':').map(Number);
+                  const [eh, em] = String(s.endTime).split(':').map(Number);
+                  const startM = (sh||0)*60 + (sm||0);
+                  const endM = (eh||0)*60 + (em||0);
+                  const total = Math.max(1, endM - startM);
+                  const slot = Math.max(1, Math.round(total / 8));
+                  const lm = loginAt.getHours()*60 + loginAt.getMinutes();
+                  const idx = Math.min(7, Math.max(0, Math.floor((lm - startM) / slot)));
+                  startPeriod = isNaN(idx) ? 1 : (idx + 1);
+                }
+              } catch {}
               let overall = 'present';
               for (let i=1;i<=8;i++) {
-                const st = map[i] || 'absent';
-                if (st !== 'present') overall = 'absent';
+                let st;
+                if (i < startPeriod) {
+                  st = '-';
+                } else {
+                  st = map[i] || 'absent';
+                  if (st !== 'present') overall = 'absent';
+                }
                 lines.push(
-                  <Text key={i} style={{ color: st==='present' ? '#0f0' : '#f00', fontSize: 16, marginBottom: 4 }}>
+                  <Text key={i} style={{ color: st==='present' ? '#0f0' : (st==='-' ? '#fff' : '#f00'), fontSize: 16, marginBottom: 4 }}>
                     {ord[i-1]} period - {st}
                   </Text>
                 );
