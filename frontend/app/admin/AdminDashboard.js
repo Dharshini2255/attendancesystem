@@ -19,6 +19,7 @@ export default function AdminDashboard() {
   const [sessions, setSessions] = useState({ loggedIn: [], loggedOut: [], total: 0 });
   const [ctrl, setCtrl] = useState({ pingEnabled: false, intervalMs: 60000 });
   const [attendanceView, setAttendanceView] = useState('users');
+  const [userLocations, setUserLocations] = useState({}); // userId -> { lat, lon, timestamp }
 
   const [from, setFrom] = useState(new Date().toLocaleDateString('en-CA'));
   const [to, setTo] = useState(new Date().toLocaleDateString('en-CA'));
@@ -45,7 +46,7 @@ export default function AdminDashboard() {
         const v = await AsyncStorage.getItem('adminAuth');
         if (v === 'true') {
           setAuthorized(true);
-          await Promise.all([loadUsers(), loadAttendance(), loadPings(), loadNotifications(), loadSessions(), readControl()]);
+          await Promise.all([loadUsers(), loadAttendance(), loadPings(true), loadNotifications(), loadSessions(), readControl()]);
         } else {
           Alert.alert('Unauthorized', 'Admin access required');
           router.replace('/login');
@@ -60,7 +61,8 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (!authorized || tab !== 'dashboard') return;
     const interval = setInterval(() => {
-      loadPings();
+      loadPings(true); // Load today's pings for current locations
+      loadUsers();
       loadAttendance();
       loadNotifications();
       loadSessions();
@@ -93,15 +95,54 @@ export default function AdminDashboard() {
     } catch {}
   };
 
-  const loadPings = async () => {
+  const loadPings = async (useToday = false) => {
     try {
       const url = new URL(`${api}/admin/pings`);
-      url.searchParams.set('from', from);
-      url.searchParams.set('to', to);
+      if (useToday) {
+        const today = new Date().toLocaleDateString('en-CA');
+        url.searchParams.set('date', today);
+      } else {
+        url.searchParams.set('from', from);
+        url.searchParams.set('to', to);
+      }
       if (query) url.searchParams.set('q', query);
       const res = await fetch(url);
       const data = await res.json();
-      setPings(data || []);
+      
+      if (useToday) {
+        // For dashboard, only update locations, don't replace all pings
+        const locations = {};
+        (data || []).forEach(p => {
+          if (p.location?.latitude && p.location?.longitude && p.studentId) {
+            const userId = String(p.studentId);
+            if (!locations[userId] || new Date(p.timestamp) > new Date(locations[userId].timestamp)) {
+              locations[userId] = {
+                lat: p.location.latitude,
+                lon: p.location.longitude,
+                timestamp: p.timestamp
+              };
+            }
+          }
+        });
+        setUserLocations(prev => ({ ...prev, ...locations }));
+      } else {
+        setPings(data || []);
+        // Calculate latest location per user from pings
+        const locations = {};
+        (data || []).forEach(p => {
+          if (p.location?.latitude && p.location?.longitude && p.studentId) {
+            const userId = String(p.studentId);
+            if (!locations[userId] || new Date(p.timestamp) > new Date(locations[userId].timestamp)) {
+              locations[userId] = {
+                lat: p.location.latitude,
+                lon: p.location.longitude,
+                timestamp: p.timestamp
+              };
+            }
+          }
+        });
+        setUserLocations(locations);
+      }
     } catch {}
   };
 
@@ -229,7 +270,7 @@ export default function AdminDashboard() {
         <Text style={styles.brand}>Admin Dashboard</Text>
         {Platform.OS === 'web' ? (
           <View style={[styles.navRow, isSmall && styles.navRowSmall]}>
-            <NavItem big={isSmall} active={tab==='dashboard'} label="Dashboard" onPress={() => { setTab('dashboard'); loadPings(); loadNotifications(); }} />
+            <NavItem big={isSmall} active={tab==='dashboard'} label="Dashboard" onPress={() => { setTab('dashboard'); loadPings(true); loadNotifications(); }} />
             <NavItem active={tab==='settings'} label="Settings" onPress={() => { setTab('settings'); readSettings(); }} />
             <NavItem active={tab==='attendance'} label="Attendance" onPress={() => { setTab('attendance'); loadAttendance(); }} />
             <NavItem active={tab==='notifications'} label="Notifications" onPress={() => { setTab('notifications'); loadNotifications(); }} />
@@ -240,7 +281,7 @@ export default function AdminDashboard() {
           </View>
         ) : (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.navRowMobile}>
-            <NavItem active={tab==='dashboard'} label="Dashboard" onPress={() => { setTab('dashboard'); loadPings(); loadNotifications(); }} />
+            <NavItem active={tab==='dashboard'} label="Dashboard" onPress={() => { setTab('dashboard'); loadPings(true); loadNotifications(); }} />
             <NavItem active={tab==='settings'} label="Settings" onPress={() => { setTab('settings'); readSettings(); }} />
             <NavItem active={tab==='attendance'} label="Attendance" onPress={() => { setTab('attendance'); loadAttendance(); }} />
             <NavItem active={tab==='notifications'} label="Notifications" onPress={() => { setTab('notifications'); loadNotifications(); }} />
@@ -271,12 +312,28 @@ export default function AdminDashboard() {
               </View>
               <View style={styles.legendRow}>
                 <View style={[styles.legendDot,{backgroundColor:'#60a5fa'}]} />
-                <Text style={styles.legendText}>Currently</Text>
-                <View style={[styles.legendDot,{backgroundColor:'#10b981'}]} />
-                <Text style={styles.legendText}>Active Classes</Text>
-                <View style={[styles.legendDot,{backgroundColor:'#f59e0b'}]} />
-                <Text style={styles.legendText}>Summary</Text>
+                <Text style={styles.legendText}>Current User Locations</Text>
               </View>
+              {(() => {
+                // Show online users' locations
+                const onlineUsers = users.filter(u => u.loggedIn);
+                if (onlineUsers.length === 0) return <Text style={styles.muted}>No users online</Text>;
+                return (
+                  <View style={{ marginTop: 8 }}>
+                    {onlineUsers.slice(0, 5).map(u => {
+                      const loc = userLocations[String(u._id)] || u.location;
+                      if (!loc || (!loc.latitude && !loc.lat)) return null;
+                      const lat = loc.latitude || loc.lat;
+                      const lon = loc.longitude || loc.lon;
+                      return (
+                        <Text key={u._id} style={[styles.muted, { fontSize: 12, marginBottom: 2 }]}>
+                          {u.name}: {lat.toFixed(6)}, {lon.toFixed(6)}
+                        </Text>
+                      );
+                    })}
+                  </View>
+                );
+              })()}
             </Panel>
 
             {/* Right: Notifications */}
@@ -304,15 +361,28 @@ export default function AdminDashboard() {
                   <Text style={[styles.th,{flex:1}]}>Biometric</Text>
                   <Text style={[styles.th,{flex:1}]}>Tracking</Text>
                 </View>
-                {users.slice(0,12).map((u,i)=> (
-                  <View key={u._id||i} style={styles.tableRow}>
-                    <Text style={[styles.td,{flex:2}]}>{u.name}</Text>
-                    <Text style={[styles.td,{flex:1.2}]}>{u.regNo}</Text>
-                    <Text style={[styles.td,{flex:1}]}>{u.loggedIn? 'Online' : 'Offline'}</Text>
-                    <Text style={[styles.td,{flex:1}]}>{u.biometricEnrolled? '✓' : '—'}</Text>
-                    <Text style={[styles.td,{flex:1}]}>{u.trackingEnabled? '✓' : '—'}</Text>
-                  </View>
-                ))}
+                {users.slice(0,12).map((u,i)=> {
+                  const loc = userLocations[String(u._id)] || u.location;
+                  let locationText = '—';
+                  if (loc) {
+                    const lat = loc.latitude || loc.lat;
+                    const lon = loc.longitude || loc.lon;
+                    if (lat && lon) {
+                      locationText = u.loggedIn 
+                        ? `Current: ${lat.toFixed(4)}, ${lon.toFixed(4)}`
+                        : `Last: ${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+                    }
+                  }
+                  return (
+                    <View key={u._id||i} style={styles.tableRow}>
+                      <Text style={[styles.td,{flex:2}]}>{u.name}</Text>
+                      <Text style={[styles.td,{flex:1.2}]}>{u.regNo}</Text>
+                      <Text style={[styles.td,{flex:1}]}>{u.loggedIn? 'Online' : 'Offline'}</Text>
+                      <Text style={[styles.td,{flex:1}]}>{u.biometricEnrolled? '✓' : '—'}</Text>
+                      <Text style={[styles.td,{flex:1, fontSize: 11 }]}>{locationText}</Text>
+                    </View>
+                  );
+                })}
               </TableContainer>
 
             </Panel>
