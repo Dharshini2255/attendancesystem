@@ -48,7 +48,7 @@ export default function AdminDashboard() {
           await Promise.all([loadUsers(), loadAttendance(), loadPings(), loadNotifications(), loadSessions(), readControl()]);
         } else {
           Alert.alert('Unauthorized', 'Admin access required');
-          router.replace('/home');
+          router.replace('/login');
         }
       } catch {
         router.replace('/home');
@@ -999,7 +999,7 @@ const styles = StyleSheet.create({
   segmentActive: { backgroundColor:'rgba(139, 129, 129, 0.9)' },
   segmentLabel: { color:'#0f172a', fontWeight:'700' },
 
-  input: { padding: 10, backgroundColor:'rgba(255, 255, 255, 1), 0.8)', borderRadius: 10, color:'#0f172a' },
+  input: { padding: 10, backgroundColor:'rgba(255,255,255,0.8)', borderRadius: 10, color:'#0f172a' },
   webInput: { padding: 10, background: 'rgba(255, 255, 255, 1)', borderRadius: 10, border: '1px solid rgba(148,163,184,0.35)' },
 
   // Table styles

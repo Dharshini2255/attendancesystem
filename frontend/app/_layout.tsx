@@ -45,6 +45,7 @@ export default function RootLayout() {
             <Stack.Screen name="signup/step3" options={{ title: 'Signup - Step 3' }} />
             <Stack.Screen name="signup/step4" options={{ title: 'Signup - Step 4' }} />
             <Stack.Screen name="home" options={{ headerShown: false }} />
+            <Stack.Screen name="admin/AdminDashboard" options={{ headerShown: false }} />
           </Stack>
         </ProtectedStack>
         <StatusBar style="auto" />

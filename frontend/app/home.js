@@ -229,26 +229,26 @@ useEffect(() => {
             {status ? <Text style={styles.status}>{status}</Text> : null}
           </View>
 
-          {/* Attendance Summary */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>🗓️ Attendance for {attendanceDate || 'Today'}</Text>
-            {attendance.length === 0 ? (
-              <Text style={styles.label}>No attendance recorded yet.</Text>
-            ) : (
-              attendance.map((p, index) => (
-                <Text
-                  key={index}
-                  style={{
-                    color: p.status === 'present' ? '#0f0' : '#f00',
-                    fontSize: 16,
-                    marginBottom: 4
-                  }}
-                >
-                  Period {p.periodNumber}: {p.status === 'present' ? '✅ Present' : '❌ Absent'}
-                </Text>
-              ))
-            )}
-          </View>
+          {/* Current Day Attendance (visible after first attendance is marked) */}
+          {attendance.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Current Day Attendance</Text>
+              {(() => {
+                const presentSet = new Set((attendance||[]).map(p=>Number(p.periodNumber)));
+                const ord = ['1st','2nd','3rd','4th','5th','6th','7th','8th'];
+                const lines = [];
+                for (let i=1;i<=8;i++) {
+                  const st = presentSet.has(i) ? 'present' : 'absent';
+                  lines.push(
+                    <Text key={i} style={{ color: st==='present' ? '#0f0' : '#f00', fontSize: 16, marginBottom: 4 }}>
+                      {ord[i-1]} period - {st}
+                    </Text>
+                  );
+                }
+                return lines;
+              })()}
+            </View>
+          )}
         </ScrollView>
 
         {/* Drawer Menu */}
@@ -303,6 +303,7 @@ useEffect(() => {
 }
 
 const styles = StyleSheet.create({
+  container: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000' },
   background: { flex: 1 },
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' },
   scroll: { padding: 20 },
