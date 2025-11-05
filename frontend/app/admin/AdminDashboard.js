@@ -202,28 +202,6 @@ export default function AdminDashboard() {
     <BlurView intensity={Platform.OS==='web' ? 0 : 40} tint="light" style={[styles.card, style]}>{children}</BlurView>
   );
 
-  // Auto-refresh key sections
-  useEffect(() => {
-    let iv;
-    if (tab === 'attendance') {
-      iv = setInterval(() => { loadAttendance(); loadUsers(); }, 10000);
-    } else if (tab === 'dashboard') {
-      iv = setInterval(() => { loadPings(); loadNotifications(); loadSessions(); }, 10000);
-    }
-    return () => { if (iv) clearInterval(iv); };
-  }, [tab]);
-
-  useEffect(() => {
-    let iv;
-    if (historyOpen && historyUser?._id) {
-      iv = setInterval(async () => {
-        try { const s = await fetch(`${api}/admin/settings`).then(r=>r.json()); setSettingsCache(s); } catch {}
-        try { const params = new URLSearchParams({ from: historyFrom, to: historyTo }); const res = await fetch(`${api}/admin/student/${encodeURIComponent(historyUser._id)}/history?${params}`); const detail=await res.json(); setHistoryData(detail || { records: [], pings: [] }); } catch {}
-      }, 10000);
-    }
-    return () => { if (iv) clearInterval(iv); };
-  }, [historyOpen, historyUser, historyFrom, historyTo]);
-
   const TableContainer = ({ children, minWidth = 820 }) => {
     if (Platform.OS === 'web' && !isSmall) {
       return <View style={styles.table}>{children}</View>;
@@ -408,7 +386,7 @@ export default function AdminDashboard() {
                   ) : (
                     <TextInput value={to} onChangeText={setTo} placeholder="To (YYYY-MM-DD)" style={styles.input} />
                   )}
-                  <TouchableOpacity onPress={()=>{ if (attendanceView==='attendance') loadAttendance(); else loadUsers(); }} style={[styles.primaryBtn, styles.applyBtn]}>
+                  <TouchableOpacity onPress={()=>{ if (attendanceView==='attendance') loadAttendance(); else loadUsers(); }} style={styles.primaryBtn}>
                     <Text style={styles.primaryBtnText}>Apply</Text>
                   </TouchableOpacity>
                 </View>
@@ -527,26 +505,26 @@ export default function AdminDashboard() {
                   ))}
                 </View>
                 <Text style={styles.muted}>Department</Text>
-{Platform.OS==='web' ? (
-                  <input value={settings.department||''} onChange={e=>setSettings(prev => ({ ...prev, department: e.target.value }))} style={styles.webInput} placeholder="Department" />
+                {Platform.OS==='web' ? (
+                  <input value={settings.department||''} onChange={e=>setSettings({ ...settings, department: e.target.value })} style={styles.webInput} placeholder="Department" />
                 ) : (
-                  <TextInput value={settings.department||''} onChangeText={t=>setSettings(prev => ({...prev, department:t}))} style={styles.input} placeholder="Department" />
+                  <TextInput value={settings.department||''} onChangeText={t=>setSettings({...settings, department:t})} style={styles.input} placeholder="Department" />
                 )}
 
                 <Text style={styles.muted}>Class</Text>
-{Platform.OS==='web' ? (
-                  <input value={settings.class||''} onChange={e=>setSettings(prev => ({ ...prev, class: e.target.value, classes: e.target.value ? [e.target.value] : [] }))} style={styles.webInput} placeholder="e.g., CSE 1" />
+                {Platform.OS==='web' ? (
+                  <input value={settings.class||''} onChange={e=>setSettings({ ...settings, class: e.target.value })} style={styles.webInput} placeholder="e.g., CSE-A" />
                 ) : (
-                  <TextInput value={settings.class||''} onChangeText={t=>setSettings(prev => ({...prev, class:t, classes: t ? [t] : []}))} style={styles.input} placeholder="e.g., CSE 1" />
+                  <TextInput value={settings.class||''} onChangeText={t=>setSettings({...settings, class:t})} style={styles.input} placeholder="e.g., CSE-A" />
                 )}
 
                 <Text style={styles.muted}>Year</Text>
-{Platform.OS==='web' ? (
-                  <select value={String(settings.year||'')} onChange={e=>setSettings(prev => ({ ...prev, year: Number(e.target.value), years: [Number(e.target.value)] }))} style={styles.webInput}>
+                {Platform.OS==='web' ? (
+                  <select value={String(settings.year||'')} onChange={e=>setSettings({ ...settings, year: Number(e.target.value) })} style={styles.webInput}>
                     {[1,2,3,4].map(y=> <option key={y} value={y}>{y}</option>)}
                   </select>
                 ) : (
-                  <TextInput value={String(settings.year||'')} onChangeText={t=>setSettings(prev => ({...prev, year: Number(t||0), years: [Number(t||0)]}))} style={styles.input} placeholder="1-4" />
+                  <TextInput value={String(settings.year||'')} onChangeText={t=>setSettings({...settings, year: Number(t||0)})} style={styles.input} placeholder="1-4" />
                 )}
 
                 <Text style={styles.muted}>Location Options</Text>
@@ -778,7 +756,7 @@ export default function AdminDashboard() {
                     else loadPings();
                     loadUsers();
                   }} 
-                  style={styles.applyBtn}
+                  style={[styles.primaryBtn,{alignSelf:'flex-start'}]}
                 >
                   <Text style={styles.primaryBtnText}>Apply Filters</Text>
                 </TouchableOpacity>
@@ -846,7 +824,7 @@ export default function AdminDashboard() {
                 <TouchableOpacity onPress={async ()=>{
                   try { const s = await fetch(`${api}/admin/settings`).then(r=>r.json()); setSettingsCache(s); } catch {}
                   try { const params = new URLSearchParams({ from: historyFrom, to: historyTo }); const res = await fetch(`${api}/admin/student/${encodeURIComponent(historyUser._id)}/history?${params}`); const detail=await res.json(); setHistoryData(detail || { records: [], pings: [] }); } catch {}
-                }} style={styles.applyBtn}><Text style={styles.primaryBtnText}>Apply</Text></TouchableOpacity>
+                }} style={styles.primaryBtn}><Text style={styles.primaryBtnText}>Apply</Text></TouchableOpacity>
               </View>
             </View>
 
@@ -861,36 +839,13 @@ export default function AdminDashboard() {
               {(historyData.records||[]).map((r,i)=>{
                 const statusByPeriod = {};
                 (r.periods||[]).forEach(p=>{ statusByPeriod[p.periodNumber]=p.status; });
-                // Determine login-aware start period for this date
-                let startPeriod = 1;
-                try {
-                  const loginAt = historyUser?.lastLoginAt ? new Date(historyUser.lastLoginAt) : null;
-                  const loginDateStr = loginAt ? loginAt.toLocaleDateString('en-CA') : null;
-                  const s = settingsCache||{};
-                  if (loginAt && loginDateStr === r.date && s?.startTime && s?.endTime) {
-                    const [sh, sm] = String(s.startTime).split(':').map(Number);
-                    const [eh, em] = String(s.endTime).split(':').map(Number);
-                    const startM = (sh||0)*60 + (sm||0);
-                    const endM = (eh||0)*60 + (em||0);
-                    const total = Math.max(1, endM - startM);
-                    const slot = Math.max(1, Math.round(total / 8));
-                    const lm = loginAt.getHours()*60 + loginAt.getMinutes();
-                    const idx = Math.min(7, Math.max(0, Math.floor((lm - startM) / slot)));
-                    startPeriod = isNaN(idx) ? 1 : (idx + 1);
-                  }
-                } catch {}
-                // Compute overall considering only periods from startPeriod
-                const presentSet = new Set((r.periods||[]).filter(p=>p.periodNumber>=startPeriod && p.status==='present').map(p=>p.periodNumber));
-                let overall = 'present';
-                for (let k=startPeriod; k<=8; k++) { if (!presentSet.has(k)) { overall = presentSet.size>0 ? 'partial' : 'absent'; break; } }
+                const overall = (r.periods||[]).every(p=>p.status==='present') ? 'present' : ((r.periods||[]).some(p=>p.status==='present')?'partial':'absent');
                 return (
                   <View key={i} style={styles.tableRow}>
                     <Text style={[styles.td,{flex:1.2}]}>{r.date}</Text>
-                    {Array.from({length:8}).map((_,idx)=> {
-                      const pnum = idx+1;
-                      const val = pnum < startPeriod ? '-' : (statusByPeriod[pnum]||'-');
-                      return (<Text key={idx} style={[styles.td,{flex:1}]}>{val}</Text>);
-                    })}
+                    {Array.from({length:8}).map((_,idx)=> (
+                      <Text key={idx} style={[styles.td,{flex:1}]}>{statusByPeriod[idx+1]||'-'}</Text>
+                    ))}
                     <Text style={[styles.td,{flex:1.5}]}>{overall}</Text>
                   </View>
                 );
@@ -1012,9 +967,8 @@ const styles = StyleSheet.create({
   muted: { color: '#526581ff' },
   value: { color: '#0f172a', fontWeight: '700' },
   rowBetween: { flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginTop: 4 },
-  primaryBtn: { marginTop: 12, backgroundColor: '#0a0a0aff', paddingVertical: 10, borderRadius: 5, alignItems: 'center', justifyContent:'center' },
-  applyBtn: { backgroundColor: '#0a0a0aff', paddingVertical: 10, paddingHorizontal: 14, borderRadius: 5, alignItems: 'center', justifyContent:'center', minHeight: 40, ...Platform.select({ web: { display:'inline-flex' }, default: {} }) },
-  primaryBtnText: { color: '#fcfdffff', fontWeight: '800', textAlign:'center' },
+  primaryBtn: { marginTop: 12, backgroundColor: '#0a0a0aff', paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
+  primaryBtnText: { color: '#fcfdffff', fontWeight: '800' },
   secondaryBtn: { backgroundColor: 'rgba(96,165,250,0.15)', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 8, marginTop: 6 },
   secondaryBtnText: { color: '#000000ff', fontWeight: '700' },
   link: { color: '#000000ff', fontWeight: '700', textDecorationLine: 'underline' },
@@ -1035,7 +989,7 @@ const styles = StyleSheet.create({
 
   analyticsRow: { flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginTop: 12 },
   gaugeWrap: { alignItems:'center', justifyContent:'center' },
-  gaugeCircle: { width: 80, height: 80, borderRadius: 40, borderWidth: 8, borderColor: '#ffffffff', alignItems:'center', justifyContent:'center', backgroundColor:'rgba(255,255,255,0.6)' },
+  gaugeCircle: { width: 80, height: 80, borderRadius: 40, borderWidth: 8, borderColor: '#60a5fa', alignItems:'center', justifyContent:'center', backgroundColor:'rgba(255,255,255,0.6)' },
   gaugeText: { fontWeight:'800', color:'#0f172a' },
   donutRow: { flexDirection:'row', gap: 12 },
   donut: { width: 40, height: 40, borderRadius: 20, borderWidth: 6, backgroundColor:'transparent' },
@@ -1045,7 +999,7 @@ const styles = StyleSheet.create({
   segmentActive: { backgroundColor:'rgba(139, 129, 129, 0.9)' },
   segmentLabel: { color:'#0f172a', fontWeight:'700' },
 
-  input: { padding: 10, backgroundColor:'rgba(255,255,255,0.8)', borderRadius: 10, color:'#0f172a' },
+  input: { padding: 10, backgroundColor:'rgba(255, 255, 255, 1), 0.8)', borderRadius: 10, color:'#0f172a' },
   webInput: { padding: 10, background: 'rgba(255, 255, 255, 1)', borderRadius: 10, border: '1px solid rgba(148,163,184,0.35)' },
 
   // Table styles
@@ -1079,5 +1033,5 @@ const styles = StyleSheet.create({
 
   // History modal styles
   histBackdrop: { position:'fixed', top:0, left:0, right:0, bottom:0, backgroundColor:'rgba(0,0,0,0.5)', zIndex:2000, alignItems:'center', justifyContent:'center' },
-  histCard: { width:'90%', maxWidth: 1100, maxHeight: '90%', padding:16, borderRadius:16, borderWidth:1, borderColor:'#000', backgroundColor:'rgba(126, 126, 189, 0.95)', ...Platform.select({ web: { overflowY:'auto' }, default: {} }) },
+  histCard: { width:'90%', maxWidth: 1100, maxHeight: '90%', padding:16, borderRadius:16, backgroundColor:'rgba(104, 100, 100, 0.95)', ...Platform.select({ web: { overflowY:'auto' }, default: {} }) },
 });

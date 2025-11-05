@@ -217,13 +217,6 @@ app.post('/attendance/mark', async (req, res) => {
     const proximityAnchor = settings?.proximityLocation;
     const proximityRadius = Number(settings?.proximityRadiusMeters || 100);
 
-    // scope filters (classes/years)
-    const scopeClasses = Array.isArray(settings?.classes) ? settings.classes.filter(Boolean) : [];
-    const scopeYears = Array.isArray(settings?.years) ? settings.years.filter(v=>v!=null) : [];
-    if ((scopeClasses.length && !scopeClasses.includes(student.class)) || (scopeYears.length && !scopeYears.includes(Number(student.year)))) {
-      return res.status(403).json({ error: "Outside scope. Settings do not target this student (class/year)." });
-    }
-
     const MAX_RADIUS_METERS = parseInt(process.env.MAX_RADIUS_METERS || '50000', 10); // campus radius
 
     const toRad = (value) => (value * Math.PI) / 180;
