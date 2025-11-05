@@ -502,8 +502,9 @@ useEffect(() => {
   }
 
   return (
-    <ImageBackground source={require('../assets/bg.jpg')} style={styles.background}>
-      <View style={styles.overlay}>
+    <View style={styles.container}>
+      <ImageBackground source={require('../assets/bg.jpg')} style={styles.background} resizeMode="cover" />
+      <View style={styles.contentWrapper}>
         <ScrollView contentContainerStyle={styles.scroll}>
           {/* Header */}
           <View style={styles.header}>
@@ -581,63 +582,86 @@ useEffect(() => {
             </View>
           )}
         </ScrollView>
-
-        {/* Drawer Menu */}
-        <Modal
-          animationType="slide"
-          transparent={true}
-          visible={drawerVisible}
-          onRequestClose={() => setDrawerVisible(false)}
-        >
-          <Pressable style={styles.overlay} onPress={() => setDrawerVisible(false)}>
-            <View style={styles.drawer}>
-              <Text style={styles.drawerTitle}>Menu</Text>
-              <TouchableOpacity
-                style={styles.drawerItem}
-                onPress={() => {
-                  setDrawerVisible(false);
-                  router.push({ pathname: '/profile', params: { username: user?.username } });
-                }}
-              >
-                <Text style={styles.drawerText}>My Profile</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.drawerItem}
-                onPress={async () => {
-                  setDrawerVisible(false);
-                  try { await SecureStore.deleteItemAsync('user'); } catch {}
-                  try {
-                    const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-                    // notify backend about logout
-                    try {
-                      if (user?.username) {
-                        await fetch(apiUrl('/logout'), {
-                          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: user.username })
-                        });
-                      }
-                    } catch {}
-                    await AsyncStorage.removeItem('user');
-                    await AsyncStorage.removeItem('adminAuth');
-                  } catch {}
-                  router.replace('/login');
-                }}
-              >
-                <Text style={styles.drawerText}>Sign Out</Text>
-              </TouchableOpacity>
-            </View>
-          </Pressable>
-        </Modal>
-
       </View>
-    </ImageBackground>
+
+      {/* Drawer Menu */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={drawerVisible}
+        onRequestClose={() => setDrawerVisible(false)}
+      >
+        <Pressable style={styles.drawerOverlay} onPress={() => setDrawerVisible(false)}>
+          <View style={styles.drawer}>
+            <Text style={styles.drawerTitle}>Menu</Text>
+            <TouchableOpacity
+              style={styles.drawerItem}
+              onPress={() => {
+                setDrawerVisible(false);
+                router.push({ pathname: '/profile', params: { username: user?.username } });
+              }}
+            >
+              <Text style={styles.drawerText}>My Profile</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.drawerItem}
+              onPress={async () => {
+                setDrawerVisible(false);
+                try { await SecureStore.deleteItemAsync('user'); } catch {}
+                try {
+                  const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+                  // notify backend about logout
+                  try {
+                    if (user?.username) {
+                      await fetch(apiUrl('/logout'), {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: user.username })
+                      });
+                    }
+                  } catch {}
+                  await AsyncStorage.removeItem('user');
+                  await AsyncStorage.removeItem('adminAuth');
+                } catch {}
+                router.replace('/login');
+              }}
+            >
+              <Text style={styles.drawerText}>Sign Out</Text>
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      </Modal>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000' },
-  background: { flex: 1 },
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' },
-  scroll: { padding: 20 },
+  container: { 
+    flex: 1, 
+    position: 'relative',
+    backgroundColor: '#000' 
+  },
+  background: { 
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%'
+  },
+  overlay: { 
+    flex: 1, 
+    backgroundColor: 'rgba(0,0,0,0.1)' 
+  },
+  contentWrapper: {
+    flex: 1,
+    position: 'relative',
+    zIndex: 1
+  },
+  scroll: { padding: 20, flex: 1 },
+  drawerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)'
+  },
   header: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
   headerTitle: { color: '#fff', fontSize: 22, fontWeight: 'bold', marginLeft: 10 },
   infoBox: { marginBottom: 20 },

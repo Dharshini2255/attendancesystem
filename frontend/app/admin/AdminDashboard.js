@@ -889,7 +889,33 @@ export default function AdminDashboard() {
                 <Text style={[styles.th,{flex:0.8,textAlign:'right'}]}></Text>
               </View>
               {(() => {
+                const s = settingsCache||{};
+                const threshold = Math.max(1, Number(s.pingThresholdPerPeriod || 4));
                 const datesWithPings = new Set((historyData.pings||[]).map(p=> new Date(p.timestamp).toLocaleDateString('en-CA')));
+                const collegePoly = s.collegePolygon||[];
+                const campusRadius= 50000;
+                const toRad = (v)=> (v*Math.PI)/180; const R=6371000;
+                const dist=(a,b)=>{ const dLat=toRad(a.latitude-b.latitude), dLon=toRad(a.longitude-b.longitude); const lat1=toRad(b.latitude), lat2=toRad(a.latitude); const h=Math.sin(dLat/2)**2+Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2; return 2*R*Math.atan2(Math.sqrt(h),Math.sqrt(1-h)); };
+                const pinPoly=(pt,poly)=>{ if(!poly||poly.length<3) return false; let inside=false; for(let i=0,j=poly.length-1;i<poly.length;j=i++){const xi=poly[i].latitude, yi=poly[i].longitude; const xj=poly[j].latitude, yj=poly[j].longitude; const intersect=((yi>pt.longitude)!==(yj>pt.longitude)) && (pt.latitude < (xj - xi) * (pt.longitude - yi) / (yj - yi + 1e-12) + xi); if(intersect) inside=!inside;} return inside; };
+                const liveAnchors = s.proximityAnchors||[];
+                const singleAnchor = s.proximityLocation; const singleR = s.proximityRadiusMeters||100;
+                
+                // Calculate valid pings per period per date
+                const validPingsByDatePeriod = {};
+                (historyData.pings||[]).forEach(p=>{
+                  const d = new Date(p.timestamp).toLocaleDateString('en-CA');
+                  if(!validPingsByDatePeriod[d]) validPingsByDatePeriod[d] = {};
+                  const loc = { latitude: p.location?.latitude, longitude: p.location?.longitude };
+                  const inCollege = (collegePoly.length>=3 ? pinPoly(loc, collegePoly) : (s.useCollegeLocation && s.collegeLocation && dist(loc, s.collegeLocation)<=campusRadius));
+                  let inLive = false; if(singleAnchor?.latitude){ inLive = dist(loc, singleAnchor)<=singleR; }
+                  for(const a of liveAnchors){ if(a?.location?.latitude && dist(loc,a.location)<= (a.radiusMeters||100)) { inLive=true; break; } }
+                  if(inCollege || inLive) {
+                    const period = p.periodNumber || 0;
+                    if(!validPingsByDatePeriod[d][period]) validPingsByDatePeriod[d][period] = 0;
+                    validPingsByDatePeriod[d][period]++;
+                  }
+                });
+                
                 return (historyData.records||[]).map((r,i)=>{
                   const statusByPeriod = {};
                   (r.periods||[]).forEach(p=>{ statusByPeriod[p.periodNumber]=p.status; });
@@ -898,7 +924,6 @@ export default function AdminDashboard() {
                 try {
                   const loginAt = historyUser?.lastLoginAt ? new Date(historyUser.lastLoginAt) : null;
                   const loginDateStr = loginAt ? loginAt.toLocaleDateString('en-CA') : null;
-                  const s = settingsCache||{};
                   if (loginAt && loginDateStr === r.date && s?.startTime && s?.endTime) {
                     const [sh, sm] = String(s.startTime).split(':').map(Number);
                     const [eh, em] = String(s.endTime).split(':').map(Number);
@@ -913,7 +938,22 @@ export default function AdminDashboard() {
                 } catch {}
                 // Skip days with neither attendance nor any pings
                 if (((r.periods||[]).length===0) && !datesWithPings.has(r.date)) return null;
-                const presentSet = new Set((r.periods||[]).filter(p=>p.periodNumber>=startPeriod && p.status==='present').map(p=>p.periodNumber));
+                
+                // Calculate period statuses: use recorded status if available, otherwise calculate from pings
+                const periodStatuses = {};
+                for(let pnum=1; pnum<=8; pnum++) {
+                  if(pnum < startPeriod) {
+                    periodStatuses[pnum] = '-';
+                  } else if(statusByPeriod[pnum]) {
+                    periodStatuses[pnum] = statusByPeriod[pnum]; // Use recorded status
+                  } else {
+                    // Calculate from valid pings
+                    const validCount = (validPingsByDatePeriod[r.date] && validPingsByDatePeriod[r.date][pnum]) || 0;
+                    periodStatuses[pnum] = validCount >= threshold ? 'present' : (validCount > 0 ? 'absent' : 'absent');
+                  }
+                }
+                
+                const presentSet = new Set(Object.keys(periodStatuses).filter(p=>periodStatuses[p]==='present').map(Number));
                 const required = 8 - startPeriod + 1;
                 const overall = presentSet.size >= required ? 'present' : (presentSet.size>0 ? 'partial' : 'absent');
                 return (
@@ -921,10 +961,11 @@ export default function AdminDashboard() {
                     <Text style={[styles.td,{flex:1.2}]}>{r.date}</Text>
                     {Array.from({length:8}).map((_,idx)=> {
                       const pnum = idx+1;
-                      const val = pnum < startPeriod ? '-' : (statusByPeriod[pnum]||'-');
-                      return (<Text key={idx} style={[styles.td,{flex:1}]}>{val}</Text>);
+                      const val = periodStatuses[pnum] || '-';
+                      const color = val==='present'?'#10b981':(val==='absent'?'#ef4444':'#64748b');
+                      return (<Text key={idx} style={[styles.td,{flex:1, color}]}>{val}</Text>);
                     })}
-                    <Text style={[styles.td,{flex:1.5}]}>{overall}</Text>
+                    <Text style={[styles.td,{flex:1.5, color: overall==='present'?'#10b981':(overall==='partial'?'#f59e0b':'#ef4444')}]}>{overall}</Text>
                     <View style={{ flex:0.8, alignItems:'flex-end' }}>
                       <TouchableOpacity onPress={async()=>{
                         try {
@@ -958,6 +999,7 @@ export default function AdminDashboard() {
               </View>
               {(() => {
                 const s = settingsCache||{};
+                const threshold = Math.max(1, Number(s.pingThresholdPerPeriod || 4));
                 const collegePoly = s.collegePolygon||[];
                 const campusRadius= 50000; // same as server default MAX_RADIUS_METERS unless polygon exists
                 const toRad = (v)=> (v*Math.PI)/180; const R=6371000;
@@ -971,19 +1013,52 @@ export default function AdminDashboard() {
                   const d = new Date(p.timestamp).toLocaleDateString('en-CA');
                   if(!byDate[d]) byDate[d]=[]; byDate[d].push(p);
                 });
+                // Group pings by date and period to calculate attendance
+                const attendanceByDatePeriod = {};
+                (historyData.records||[]).forEach(r=>{
+                  if(!attendanceByDatePeriod[r.date]) attendanceByDatePeriod[r.date]={};
+                  (r.periods||[]).forEach(p=>{
+                    attendanceByDatePeriod[r.date][p.periodNumber] = p.status;
+                  });
+                });
                 Object.keys(byDate).sort().forEach(d=>{
+                  // Count valid pings per period for this date
+                  const validPingsByPeriod = {};
+                  byDate[d].forEach(p=>{
+                    const loc = { latitude: p.location?.latitude, longitude: p.location?.longitude };
+                    const inCollege = (collegePoly.length>=3 ? pinPoly(loc, collegePoly) : (s.useCollegeLocation && s.collegeLocation && dist(loc, s.collegeLocation)<=campusRadius));
+                    let inLive = false; if(singleAnchor?.latitude){ inLive = dist(loc, singleAnchor)<=singleR; }
+                    for(const a of liveAnchors){ if(a?.location?.latitude && dist(loc,a.location)<= (a.radiusMeters||100)) { inLive=true; break; } }
+                    if(inCollege || inLive) {
+                      const period = p.periodNumber || 0;
+                      if(!validPingsByPeriod[period]) validPingsByPeriod[period] = 0;
+                      validPingsByPeriod[period]++;
+                    }
+                  });
+                  // Determine attendance status for each period
+                  const periodStatus = {};
+                  for(let p=1; p<=8; p++) {
+                    const validCount = validPingsByPeriod[p] || 0;
+                    if(attendanceByDatePeriod[d] && attendanceByDatePeriod[d][p]) {
+                      periodStatus[p] = attendanceByDatePeriod[d][p]; // Use recorded status if available
+                    } else {
+                      periodStatus[p] = validCount >= threshold ? 'present' : (validCount > 0 ? 'absent' : '-');
+                    }
+                  }
                   byDate[d].forEach((p,idx)=>{
                     const loc = { latitude: p.location?.latitude, longitude: p.location?.longitude };
                     const inCollege = (collegePoly.length>=3 ? pinPoly(loc, collegePoly) : (s.useCollegeLocation && s.collegeLocation && dist(loc, s.collegeLocation)<=campusRadius));
                     let inLive = false; if(singleAnchor?.latitude){ inLive = dist(loc, singleAnchor)<=singleR; }
                     for(const a of liveAnchors){ if(a?.location?.latitude && dist(loc,a.location)<= (a.radiusMeters||100)) { inLive=true; break; } }
+                    const period = p.periodNumber || 0;
+                    const attendanceStatus = periodStatus[period] || '-';
                     rows.push(
                       <View key={`${d}-${idx}`} style={[styles.tableRow, { alignItems:'center' }]}>
                         <Text style={[styles.td,{flex:1.2}]}>{d}</Text>
                         <Text style={[styles.td,{flex:1.2}]}>{idx+1}</Text>
                         <Text style={[styles.td,{flex:1.6}]}>{inCollege?'yes':'no'} | {inLive?'yes':'no'}</Text>
-                        <Text style={[styles.td,{flex:0.8}]}>{p.periodNumber||''}</Text>
-                        <Text style={[styles.td,{flex:1.2}]}>{p.biometricVerified? 'verified' : '-'}</Text>
+                        <Text style={[styles.td,{flex:0.8}]}>{period}</Text>
+                        <Text style={[styles.td,{flex:1.2, color: attendanceStatus==='present'?'#10b981':(attendanceStatus==='absent'?'#ef4444':'#64748b')}]}>{attendanceStatus}</Text>
                         <View style={{ flex:0.8, alignItems:'flex-end' }}>
                           <TouchableOpacity onPress={async()=>{
                             try {
