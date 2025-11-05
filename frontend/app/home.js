@@ -223,10 +223,10 @@ useEffect(() => {
       stateRef.perCounts[period] = count + 1;
       await refreshAttendance(user._id);
     } catch {}
-    finally {
-      sendingRef.sending = false;
-    }
-  };
+  } finally {
+    sendingRef.sending = false;
+  }
+};
 
   const start = async () => {
     await ensurePermission();
