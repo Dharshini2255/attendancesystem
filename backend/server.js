@@ -361,19 +361,22 @@ app.get('/attendance/today/:studentId', async (req, res) => {
 
     const record = await Attendance.findOne({ studentId, date: todayLocal });
     if (!record) {
-      return res.status(200).json({ periods: [], date: todayLocal });
+      return res.status(200).json({ periods: [], date: todayLocal, overall: 'absent' });
     }
 
     const summary = record.periods.map(p => ({
       periodNumber: p.periodNumber,
       status: p.status
     }));
+    const presentCount = (record.periods || []).filter(p=>p.status==='present').length;
+    const overall = presentCount === 8 ? 'present' : (presentCount > 0 ? 'partial' : 'absent');
 
     res.status(200).json({
       date: todayLocal,
       studentName: record.studentName,
       regNo: record.regNo,
-      periods: summary
+      periods: summary,
+      overall
     });
   } catch (err) {
     console.error('Fetch attendance error:', err);
@@ -776,6 +779,19 @@ app.delete('/admin/attendance', async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     console.error('Admin attendance delete error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete entire day attendance record
+app.delete('/admin/attendance/day', async (req, res) => {
+  try {
+    const { studentId, date } = req.query;
+    if (!studentId || !date) return res.status(400).json({ error: 'Missing fields' });
+    await Attendance.deleteOne({ studentId, date });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Admin attendance day delete error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });

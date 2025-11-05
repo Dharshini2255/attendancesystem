@@ -317,14 +317,15 @@ export default function AdminDashboard() {
                   <Text style={[styles.th, { flex: 2 }]}>Student</Text>
                   <Text style={[styles.th, { flex: 1 }]}>Period</Text>
                   <Text style={[styles.th, { flex: 1 }]}>Status</Text>
+                  <Text style={[styles.th, { flex: 0.6, textAlign:'right' }]}></Text>
                 </View>
                 {pings.slice(0,20).map((p,i)=> (
                   <View key={i} style={[styles.tableRow, { alignItems:'center' }]}>
                     <Text style={[styles.td,{flex:2}]}>{new Date(p.timestamp).toLocaleString()}</Text>
                     <Text style={[styles.td,{flex:2}]}>{p.studentName||''} ({p.regNo||''})</Text>
                     <Text style={[styles.td,{flex:1}]}>{p.periodNumber||''}</Text>
-                    <View style={{ flexDirection:'row', alignItems:'center', gap:8, flex:1 }}>
-                      <Text style={[styles.td]}>{p.biometricVerified? 'verified' : (p.timestampType||'')}</Text>
+                    <Text style={[styles.td,{flex:1}]}>{p.biometricVerified? 'verified' : (p.timestampType||'')}</Text>
+                    <View style={{ flex:0.6, alignItems:'flex-end' }}>
                       <TouchableOpacity onPress={async()=>{
                         try {
                           await fetch(`${api}/admin/ping/${encodeURIComponent(p._id)}`, { method: 'DELETE' });
@@ -873,18 +874,54 @@ export default function AdminDashboard() {
                 <Text style={[styles.th,{flex:1.2}]}>Date</Text>
                 {Array.from({length:8}).map((_,idx)=>(<Text key={idx} style={[styles.th,{flex:1}]}>P{idx+1}</Text>))}
                 <Text style={[styles.th,{flex:1.5}]}>Overall</Text>
+                <Text style={[styles.th,{flex:0.8,textAlign:'right'}]}></Text>
               </View>
               {(historyData.records||[]).map((r,i)=>{
                 const statusByPeriod = {};
                 (r.periods||[]).forEach(p=>{ statusByPeriod[p.periodNumber]=p.status; });
-                const overall = (r.periods||[]).every(p=>p.status==='present') ? 'present' : ((r.periods||[]).some(p=>p.status==='present')?'partial':'absent');
+                // Determine login-aware start period for this date
+                let startPeriod = 1;
+                try {
+                  const loginAt = historyUser?.lastLoginAt ? new Date(historyUser.lastLoginAt) : null;
+                  const loginDateStr = loginAt ? loginAt.toLocaleDateString('en-CA') : null;
+                  const s = settingsCache||{};
+                  if (loginAt && loginDateStr === r.date && s?.startTime && s?.endTime) {
+                    const [sh, sm] = String(s.startTime).split(':').map(Number);
+                    const [eh, em] = String(s.endTime).split(':').map(Number);
+                    const startM = (sh||0)*60 + (sm||0);
+                    const endM = (eh||0)*60 + (em||0);
+                    const total = Math.max(1, endM - startM);
+                    const slot = Math.max(1, Math.round(total / 8));
+                    const lm = loginAt.getHours()*60 + loginAt.getMinutes();
+                    const idx = Math.min(7, Math.max(0, Math.floor((lm - startM) / slot)));
+                    startPeriod = isNaN(idx) ? 1 : (idx + 1);
+                  }
+                } catch {}
+                const presentSet = new Set((r.periods||[]).filter(p=>p.periodNumber>=startPeriod && p.status==='present').map(p=>p.periodNumber));
+                const required = 8 - startPeriod + 1;
+                const overall = presentSet.size >= required ? 'present' : (presentSet.size>0 ? 'partial' : 'absent');
                 return (
-                  <View key={i} style={styles.tableRow}>
+                  <View key={i} style={[styles.tableRow, { alignItems:'center' }]}>
                     <Text style={[styles.td,{flex:1.2}]}>{r.date}</Text>
-                    {Array.from({length:8}).map((_,idx)=> (
-                      <Text key={idx} style={[styles.td,{flex:1}]}>{statusByPeriod[idx+1]||'-'}</Text>
-                    ))}
+                    {Array.from({length:8}).map((_,idx)=> {
+                      const pnum = idx+1;
+                      const val = pnum < startPeriod ? '-' : (statusByPeriod[pnum]||'-');
+                      return (<Text key={idx} style={[styles.td,{flex:1}]}>{val}</Text>);
+                    })}
                     <Text style={[styles.td,{flex:1.5}]}>{overall}</Text>
+                    <View style={{ flex:0.8, alignItems:'flex-end' }}>
+                      <TouchableOpacity onPress={async()=>{
+                        try {
+                          const qs = new URLSearchParams({ studentId: historyUser._id, date: r.date });
+                          await fetch(`${api}/admin/attendance/day?${qs}`, { method:'DELETE' });
+                          // reload modal data
+                          try { const params = new URLSearchParams({ from: historyFrom, to: historyTo }); const res = await fetch(`${api}/admin/student/${encodeURIComponent(historyUser._id)}/history?${params}`); const detail=await res.json(); setHistoryData(detail || { records: [], pings: [] }); } catch {}
+                          await loadAttendance();
+                        } catch {}
+                      }} style={[styles.secondaryBtn,{backgroundColor:'rgba(239,68,68,0.2)', paddingVertical:4,paddingHorizontal:8}]}>
+                        <Text style={[styles.secondaryBtnText,{color:'#ef4444'}]}>Delete</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 );
               })}
@@ -900,6 +937,7 @@ export default function AdminDashboard() {
                 <Text style={[styles.th,{flex:1.6}]}>Location (college | live)</Text>
                 <Text style={[styles.th,{flex:0.8}]}>Period</Text>
                 <Text style={[styles.th,{flex:1.2}]}>Attendance</Text>
+                <Text style={[styles.th,{flex:0.8,textAlign:'right'}]}></Text>
               </View>
               {(() => {
                 const s = settingsCache||{};
@@ -928,8 +966,8 @@ export default function AdminDashboard() {
                         <Text style={[styles.td,{flex:1.2}]}>{idx+1}</Text>
                         <Text style={[styles.td,{flex:1.6}]}>{inCollege?'yes':'no'} | {inLive?'yes':'no'}</Text>
                         <Text style={[styles.td,{flex:0.8}]}>{p.periodNumber||''}</Text>
-                        <View style={{ flexDirection:'row', alignItems:'center', gap:8, flex:1.2 }}>
-                          <Text style={[styles.td]}>{p.biometricVerified? 'verified' : '-'}</Text>
+                        <Text style={[styles.td,{flex:1.2}]}>{p.biometricVerified? 'verified' : '-'}</Text>
+                        <View style={{ flex:0.8, alignItems:'flex-end' }}>
                           <TouchableOpacity onPress={async()=>{
                             try {
                               await fetch(`${api}/admin/ping/${encodeURIComponent(p._id)}`, { method:'DELETE' });
