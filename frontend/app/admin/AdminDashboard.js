@@ -876,9 +876,11 @@ export default function AdminDashboard() {
                 <Text style={[styles.th,{flex:1.5}]}>Overall</Text>
                 <Text style={[styles.th,{flex:0.8,textAlign:'right'}]}></Text>
               </View>
-              {(historyData.records||[]).map((r,i)=>{
-                const statusByPeriod = {};
-                (r.periods||[]).forEach(p=>{ statusByPeriod[p.periodNumber]=p.status; });
+              {(() => {
+                const datesWithPings = new Set((historyData.pings||[]).map(p=> new Date(p.timestamp).toLocaleDateString('en-CA')));
+                return (historyData.records||[]).map((r,i)=>{
+                  const statusByPeriod = {};
+                  (r.periods||[]).forEach(p=>{ statusByPeriod[p.periodNumber]=p.status; });
                 // Determine login-aware start period for this date
                 let startPeriod = 1;
                 try {
@@ -897,6 +899,8 @@ export default function AdminDashboard() {
                     startPeriod = isNaN(idx) ? 1 : (idx + 1);
                   }
                 } catch {}
+                // Skip days with neither attendance nor any pings
+                if (((r.periods||[]).length===0) && !datesWithPings.has(r.date)) return null;
                 const presentSet = new Set((r.periods||[]).filter(p=>p.periodNumber>=startPeriod && p.status==='present').map(p=>p.periodNumber));
                 const required = 8 - startPeriod + 1;
                 const overall = presentSet.size >= required ? 'present' : (presentSet.size>0 ? 'partial' : 'absent');
@@ -924,7 +928,8 @@ export default function AdminDashboard() {
                     </View>
                   </View>
                 );
-              })}
+              });
+              })()}
             </TableContainer>
 
             {/* Detailed Attendance */}
