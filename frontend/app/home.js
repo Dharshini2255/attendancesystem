@@ -145,32 +145,40 @@ useEffect(() => {
       // Refresh settings if needed
       if (!settingsRef.current || Date.now() > nextSettingsFetchAt) {
         await getSettings();
+        if (!settingsRef.current) {
+          setStatus('Waiting: unable to load admin settings');
+        }
       }
       const s = settingsRef.current;
       if (!s) {
         sendingRef.sending = false;
+        setStatus('Waiting: no settings available');
         return;
       }
 
       // Scope enforcement (class/year)
       if (Array.isArray(s.classes) && s.classes.length && !s.classes.includes(user.class)) {
         sendingRef.sending = false;
+        setStatus('Waiting: not in allowed class scope');
         return;
       }
       if (Array.isArray(s.years) && s.years.length && !s.years.includes(Number(user.year))) {
         sendingRef.sending = false;
+        setStatus('Waiting: not in allowed year scope');
         return;
       }
 
       const ok = await ensurePermission();
       if (!ok) {
         sendingRef.sending = false;
+        setStatus('Location permission required');
         return;
       }
 
       const now = new Date();
       if (!withinWindow(now, s)) {
         sendingRef.sending = false;
+        setStatus(`Waiting: outside time window ${s.startTime||''}-${s.endTime||''}`);
         return;
       }
 
@@ -181,6 +189,7 @@ useEffect(() => {
       // If we've completed all 8 periods, stop
       if (period > 8) {
         sendingRef.sending = false;
+        setStatus('All periods completed for today');
         return;
       }
 
@@ -196,6 +205,7 @@ useEffect(() => {
         // If we've completed all periods, stop
         if (period > 8) {
           sendingRef.sending = false;
+          setStatus('All periods completed for today');
           return;
         }
       }
@@ -282,13 +292,14 @@ useEffect(() => {
           stateRef.perCounts[period] = (stateRef.perCounts[period] || 0) + 1;
           // Refresh attendance display
           await refreshAttendance(user._id);
-          console.log(`Ping sent for period ${period}, count: ${stateRef.perCounts[period]}/${threshold}`);
+          setStatus(`Ping ${stateRef.perCounts[period]}/${threshold} sent for period ${period}`);
         } else {
-          const errorData = await response.json().catch(() => ({}));
-          console.error('Ping failed:', errorData.error || response.status);
+          let msg = '';
+          try { const errorData = await response.json(); msg = errorData?.error || ''; } catch {}
+          setStatus(`Ping failed: ${msg || response.status}`);
         }
       } catch (err) {
-        console.error('Ping error:', err);
+        setStatus('Ping error: network or permission issue');
       }
     } finally {
       sendingRef.sending = false;
@@ -331,10 +342,10 @@ useEffect(() => {
       timer = setInterval(tick, ms);
       
       // Send first ping immediately after login
-      console.log('Starting auto-pinger, sending first ping...');
+      setStatus('Starting auto-pinger…');
       setTimeout(() => tick(), 500); // Small delay to ensure everything is ready
     } catch (err) {
-      console.error('Failed to start auto-pinger:', err);
+      setStatus('Failed to start auto-pinger');
     }
   };
 
@@ -343,7 +354,7 @@ useEffect(() => {
   return () => { 
     if (timer) {
       clearInterval(timer);
-      console.log('Auto-pinger stopped');
+      setStatus('Auto-pinger stopped');
     }
   };
 }, [user]);
