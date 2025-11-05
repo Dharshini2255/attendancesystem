@@ -29,7 +29,6 @@ export default function AdminDashboard() {
   const [notifications, setNotifications] = useState([]);
   const { width } = useWindowDimensions();
   const isSmall = width < 768;
-  const [inputText, setInputText] = useState({ proximityLocation: '', collegePolygon: '', proximityAnchors: '' });
 
   // Student history modal state
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -119,37 +118,11 @@ export default function AdminDashboard() {
   };
 
   const readSettings = async () => {
-    try { 
-      const res = await fetch(`${api}/admin/settings`); 
-      const data = await res.json(); 
-      setSettings(prev => ({ ...prev, ...data }));
-      setInputText({
-        proximityLocation: `${data?.proximityLocation?.latitude||''},${data?.proximityLocation?.longitude||''}`,
-        collegePolygon: (data?.collegePolygon||[]).map(p=>`${p.latitude||''},${p.longitude||''}`).join('\n'),
-        proximityAnchors: (data?.proximityAnchors||[]).map(a=>`${a.username||''},${a.location?.latitude||''},${a.location?.longitude||''},${a.radiusMeters||100}`).join('\n')
-      });
-    } catch {}
+    try { const res = await fetch(`${api}/admin/settings`); const data = await res.json(); setSettings(prev => ({ ...prev, ...data })); } catch {}
   };
 
   const saveSettings = async () => {
-    try { 
-      // parse text inputs into structured settings before save
-      const next = { ...settings };
-      // proximityLocation
-      if (inputText.proximityLocation) {
-        const [lat, lon] = inputText.proximityLocation.split(',');
-        next.proximityLocation = { latitude: Number(lat), longitude: Number(lon) };
-      } else {
-        next.proximityLocation = null;
-      }
-      // collegePolygon
-      next.collegePolygon = (inputText.collegePolygon||'').split(/\n+/).map(s=>s.trim()).filter(Boolean).slice(0,4).map(l=>{ const [a,b]=l.split(','); return { latitude: Number(a), longitude: Number(b) }; });
-      // proximityAnchors
-      next.proximityAnchors = (inputText.proximityAnchors||'').split(/\n+/).map(s=>s.trim()).filter(Boolean).map(l=>{ const [u,la,lo,r]=l.split(','); return { username: u||'', location: { latitude: Number(la), longitude: Number(lo) }, radiusMeters: Number(r||100) }; });
-      await fetch(`${api}/admin/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(next) }); 
-      alert('Settings saved'); 
-      setSettings(next);
-    } catch {}
+    try { await fetch(`${api}/admin/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) }); alert('Settings saved'); } catch {}
   };
 
   const loadNotifications = async () => {
@@ -223,7 +196,7 @@ export default function AdminDashboard() {
   );
 
   const Panel = ({ style, children }) => (
-    Platform.OS==='web' ? <View style={[styles.card, style]}>{children}</View> : <BlurView intensity={40} tint="light" style={[styles.card, style]}>{children}</BlurView>
+    <BlurView intensity={Platform.OS==='web' ? 0 : 40} tint="light" style={[styles.card, style]}>{children}</BlurView>
   );
 
   const TableContainer = ({ children, minWidth = 820 }) => {
@@ -604,8 +577,10 @@ export default function AdminDashboard() {
 
                   <Text style={styles.muted}>College Polygon (up to 4 lines: lat,lon)</Text>
                   {Platform.OS==='web' ? (
-                    <textarea rows={4} value={inputText.collegePolygon} onChange={e=>{
-                      setInputText(prev => ({ ...prev, collegePolygon: e.target.value }));
+                    <textarea rows={4} value={(settings.collegePolygon||[]).map(p=>`${p.latitude||''},${p.longitude||''}`).join('\n')} onChange={e=>{
+                      const lines = e.target.value.split(/\n+/).map(s=>s.trim()).filter(Boolean).slice(0,4);
+                      const pts = lines.map(l=>{ const [a,b]=l.split(','); return { latitude: Number(a), longitude: Number(b) }; });
+                      setSettings({ ...settings, collegePolygon: pts });
                     }} style={{ ...styles.webInput, minHeight: 100 }} />
                   ) : (
                     <TextInput multiline value={(settings.collegePolygon||[]).map(p=>`${p.latitude||''},${p.longitude||''}`).join('\n')} onChangeText={t=>{
@@ -617,8 +592,9 @@ export default function AdminDashboard() {
 
                   <Text style={styles.muted}>Additional Live Locations (one per line: username,lat,lon,radius)</Text>
                   {Platform.OS==='web' ? (
-                    <textarea rows={4} value={inputText.proximityAnchors} onChange={e=>{
-                      setInputText(prev => ({ ...prev, proximityAnchors: e.target.value }));
+                    <textarea rows={4} value={(settings.proximityAnchors||[]).map(a=>`${a.username||''},${a.location?.latitude||''},${a.location?.longitude||''},${a.radiusMeters||100}`).join('\n')} onChange={e=>{
+                      const anchors = e.target.value.split(/\n+/).map(s=>s.trim()).filter(Boolean).map(l=>{ const [u,la,lo,r]=l.split(','); return { username: u||'', location: { latitude: Number(la), longitude: Number(lo) }, radiusMeters: Number(r||100) }; });
+                      setSettings({ ...settings, proximityAnchors: anchors });
                     }} style={{ ...styles.webInput, minHeight: 100 }} />
                   ) : (
                     <TextInput multiline value={(settings.proximityAnchors||[]).map(a=>`${a.username||''},${a.location?.latitude||''},${a.location?.longitude||''},${a.radiusMeters||100}`).join('\n')} onChangeText={t=>{
@@ -629,7 +605,7 @@ export default function AdminDashboard() {
 
                   <Text style={styles.muted}>Single Live Anchor (optional)</Text>
                   {Platform.OS==='web' ? (
-                    <input value={inputText.proximityLocation} onChange={e=> setInputText(prev => ({ ...prev, proximityLocation: e.target.value }))} style={styles.webInput} />
+                    <input value={`${settings.proximityLocation?.latitude||''},${settings.proximityLocation?.longitude||''}`} onChange={e=>{ const [lat,lon]=e.target.value.split(','); setSettings({ ...settings, proximityLocation: { latitude: Number(lat), longitude: Number(lon) } }); }} style={styles.webInput} />
                   ) : (
                     <TextInput value={`${settings.proximityLocation?.latitude||''},${settings.proximityLocation?.longitude||''}`} onChangeText={t=>{ const [lat,lon]=t.split(','); setSettings({ ...settings, proximityLocation: { latitude: Number(lat), longitude: Number(lon) } }); }} style={styles.input} placeholder="lat,lon" />
                   )}
@@ -696,18 +672,11 @@ export default function AdminDashboard() {
 
                 <Text style={styles.muted}>Biometric trigger mode</Text>
                 <View style={styles.segmentRow}>
-                  {['off','pingNumber','time','period'].map(m => (
+                  {['pingNumber','time','period'].map(m => (
                     <TouchableOpacity key={m} onPress={()=>setSettings({ ...settings, biometricTriggerMode: m })} style={[styles.segmentBtn, (settings.biometricTriggerMode||'pingNumber')===m && styles.segmentActive]}>
                       <Text style={styles.segmentLabel}>{m}</Text>
                     </TouchableOpacity>
                   ))}
-                </View>
-
-                <View style={styles.segmentRow}>
-                  <Text style={styles.muted}>Require biometric for presence</Text>
-                  <TouchableOpacity onPress={()=>setSettings({ ...settings, biometricEnforced: !settings.biometricEnforced })} style={[styles.segmentBtn, settings.biometricEnforced && styles.segmentActive]}>
-                    <Text style={styles.segmentLabel}>{settings.biometricEnforced ? 'On' : 'Off'}</Text>
-                  </TouchableOpacity>
                 </View>
 
                 {(settings.biometricTriggerMode||'pingNumber')==='pingNumber' && (

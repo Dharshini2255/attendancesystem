@@ -262,6 +262,9 @@ app.post('/attendance/mark', async (req, res) => {
         }
       }
     }
+    if (!(allowedByCollege || allowedByProximity)) {
+      return res.status(403).json({ error: "Outside allowed location. Attendance not marked." });
+    }
 
     const { biometricType, biometricVerified } = req.body || {};
 
@@ -272,15 +275,11 @@ app.post('/attendance/mark', async (req, res) => {
       periodNumber,
       timestampType,
       location,
-      locationValid: !!(allowedByCollege || allowedByProximity),
+      locationValid: true,
       biometricType: biometricType || null,
       biometricVerified: !!biometricVerified
     });
     await ping.save();
-
-    if (!(allowedByCollege || allowedByProximity)) {
-      return res.status(200).json({ message: "Ping recorded (outside allowed location)" });
-    }
 
     // Use IST (Asia/Kolkata) for date boundaries to avoid UTC shifting across days
     const todayLocal = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); // YYYY-MM-DD
