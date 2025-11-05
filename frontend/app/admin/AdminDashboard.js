@@ -160,19 +160,16 @@ export default function AdminDashboard() {
     return !isNaN(t) && (Date.now() - t) <= 30*60*1000;
   }), [pings]);
   const metrics = useMemo(() => {
-    const seenStudents = new Set();
     const seenClasses = new Set();
     let biometric = 0;
     for (const p of recentPings) {
-      const key = p.studentId || `${p.studentName||''}:${p.regNo||''}`;
-      if (key) seenStudents.add(key);
       const u = p.regNo && usersByReg[p.regNo];
       const cls = p.class || p.className || u?.class;
       if (cls) seenClasses.add(cls);
       if (p.biometricVerified) biometric += 1;
     }
-    return { activeStudents: seenStudents.size, activeClasses: seenClasses.size, biometric };
-  }, [recentPings, usersByReg]);
+    return { activeStudents: (sessions?.loggedIn?.length || 0), activeClasses: seenClasses.size, biometric };
+  }, [recentPings, usersByReg, sessions]);
 
   const departmentOptions = useMemo(() => {
     const vals = Array.from(new Set((users||[]).map(u=>u.department).filter(Boolean)));
@@ -253,7 +250,7 @@ export default function AdminDashboard() {
             <Panel style={styles.centerCol}>
               <Text style={styles.panelTitle}>Real-time Attendance Overview</Text>
               <View style={styles.metricsRow}>
-                <View style={styles.metricChip}><Text style={styles.metricNum}>{metrics.activeStudents}</Text><Text style={styles.metricLabel}>Active Students (30m)</Text></View>
+                <View style={styles.metricChip}><Text style={styles.metricNum}>{metrics.activeStudents}</Text><Text style={styles.metricLabel}>Online Students</Text></View>
                 <View style={styles.metricChip}><Text style={styles.metricNum}>{metrics.activeClasses}</Text><Text style={styles.metricLabel}>Active Classes</Text></View>
                 <View style={styles.metricChip}><Text style={styles.metricNum}>{metrics.biometric}</Text><Text style={styles.metricLabel}>Biometric Pings</Text></View>
               </View>
@@ -306,20 +303,6 @@ export default function AdminDashboard() {
                 ))}
               </TableContainer>
 
-              {/* Side analytics */}
-              <View style={styles.analyticsRow}>
-                <View style={styles.gaugeWrap}>
-                  <View style={styles.gaugeCircle}>
-                    <Text style={styles.gaugeText}>{attendancePercent}%</Text>
-                  </View>
-                  <Text style={styles.muted}>Overall Attendance</Text>
-                </View>
-                <View style={styles.donutRow}>
-                  <View style={[styles.donut, { borderColor: '#60a5fa' }]} />
-                  <View style={[styles.donut, { borderColor: '#34d399' }]} />
-                  <View style={[styles.donut, { borderColor: '#f472b6' }]} />
-                </View>
-              </View>
             </Panel>
 
             {/* Pings table */}
