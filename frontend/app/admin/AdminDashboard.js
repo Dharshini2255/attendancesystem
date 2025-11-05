@@ -459,6 +459,27 @@ export default function AdminDashboard() {
                       ) : (
                         <Text style={[styles.td, { flex: 2 }]}>Present: {r.present} | Absent: {r.absent}</Text>
                       )}
+                      {r.periodNumber != null && (
+                        <View style={{ flexDirection:'row', gap:8, marginLeft: 8 }}>
+                          <TouchableOpacity onPress={async()=>{
+                            try {
+                              await fetch(`${api}/admin/attendance`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ studentId: r.studentId, date: r.date, periodNumber: r.periodNumber, status: r.status === 'present' ? 'absent' : 'present' }) });
+                              await loadAttendance();
+                            } catch {}
+                          }} style={[styles.secondaryBtn,{paddingVertical:4,paddingHorizontal:8}]}>
+                            <Text style={styles.secondaryBtnText}>Toggle</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={async()=>{
+                            try {
+                              const qs = new URLSearchParams({ studentId: r.studentId, date: r.date, periodNumber: String(r.periodNumber) });
+                              await fetch(`${api}/admin/attendance?${qs}`, { method:'DELETE' });
+                              await loadAttendance();
+                            } catch {}
+                          }} style={[styles.secondaryBtn,{backgroundColor:'rgba(239,68,68,0.2)', paddingVertical:4,paddingHorizontal:8}]}>
+                            <Text style={[styles.secondaryBtnText,{color:'#ef4444'}]}>Delete</Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
                     </View>
             ))}
             </TableContainer>

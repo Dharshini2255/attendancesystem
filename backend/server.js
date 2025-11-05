@@ -735,6 +735,22 @@ app.patch('/admin/attendance', async (req, res) => {
   }
 });
 
+// Delete a single attendance cell
+app.delete('/admin/attendance', async (req, res) => {
+  try {
+    const { studentId, date, periodNumber } = req.query;
+    if (!studentId || !date || !periodNumber) return res.status(400).json({ error: 'Missing fields' });
+    const attendance = await Attendance.findOne({ studentId, date });
+    if (!attendance) return res.json({ ok: true });
+    attendance.periods = (attendance.periods || []).filter(p => p.periodNumber !== Number(periodNumber));
+    await attendance.save();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Admin attendance delete error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Pings with coordinates for map/view
 app.get('/admin/pings', async (req, res) => {
   try {

@@ -382,7 +382,7 @@ useEffect(() => {
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Current Day Attendance</Text>
               {(() => {
-                const presentSet = new Set((attendance||[]).map(p=>Number(p.periodNumber)));
+                const presentSet = new Set((attendance||[]).filter(p=>p.status==='present').map(p=>Number(p.periodNumber)));
                 const ord = ['1st','2nd','3rd','4th','5th','6th','7th','8th'];
                 const lines = [];
                 for (let i=1;i<=8;i++) {
@@ -393,6 +393,12 @@ useEffect(() => {
                     </Text>
                   );
                 }
+                const overall = presentSet.size===8 ? 'present' : (presentSet.size>0 ? 'partial' : 'absent');
+                lines.push(
+                  <Text key="overall" style={{ color: overall==='present' ? '#0f0' : '#f00', fontSize: 16, marginTop: 6 }}>
+                    overall attendance - {overall}
+                  </Text>
+                );
                 return lines;
               })()}
             </View>
