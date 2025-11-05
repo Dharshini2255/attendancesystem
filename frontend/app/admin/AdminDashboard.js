@@ -56,6 +56,18 @@ export default function AdminDashboard() {
     })();
   }, []);
 
+  // Auto-refresh pings and attendance when on dashboard tab
+  useEffect(() => {
+    if (!authorized || tab !== 'dashboard') return;
+    const interval = setInterval(() => {
+      loadPings();
+      loadAttendance();
+      loadNotifications();
+      loadSessions();
+    }, 10000); // Refresh every 10 seconds
+    return () => clearInterval(interval);
+  }, [authorized, tab]);
+
   const api = 'https://attendancesystem-backend-mias.onrender.com';
 
   const loadUsers = async () => {

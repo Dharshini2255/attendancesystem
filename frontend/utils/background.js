@@ -3,6 +3,7 @@ import * as Location from 'expo-location';
 import * as SecureStore from 'expo-secure-store';
 import * as turf from '@turf/turf';
 import { Platform } from 'react-native';
+import { apiUrl } from './api';
 
 const LOCATION_TASK_NAME = 'background-location-task';
 
@@ -87,7 +88,7 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
 
   const user = JSON.parse(storedUser);
 
- await fetch('https://attendancesystem-backend-mias.onrender.com/attendance/mark', {
+ await fetch(apiUrl('/attendance/mark'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

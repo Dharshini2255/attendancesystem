@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import * as Location from 'expo-location';
 import { startBackgroundTracking } from '../utils/background';
+import { apiUrl } from '../utils/api';
 import { Platform } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 
@@ -31,7 +32,7 @@ export default function HomeScreen() {
 
   const refreshAttendance = async (id) => {
     try {
-      const response = await fetch(`https://attendancesystem-backend-mias.onrender.com/attendance/today/${id}`);
+      const response = await fetch(apiUrl(`/attendance/today/${id}`));
       const data = await response.json();
       if (response.ok) {
         setAttendance(data.periods || []);
@@ -93,24 +94,39 @@ useEffect(() => {
 useEffect(() => {
   if (!user) return;
   let timer = null;
-  const stateRef = { perCounts: {}, lastPeriod: null };
+  const stateRef = { perCounts: {}, currentPeriod: 1 };
   const permRef = { granted: false };
   const sendingRef = { sending: false };
   let nextSettingsFetchAt = 0;
-  stateRef.currentPeriod = 1;
 
   const ensurePermission = async () => {
     if (permRef.granted) return true;
-    try { const { status } = await Location.requestForegroundPermissionsAsync(); permRef.granted = status === 'granted'; } catch {}
+    try { 
+      const { status } = await Location.requestForegroundPermissionsAsync(); 
+      permRef.granted = status === 'granted'; 
+    } catch {}
     if (!permRef.granted && Platform.OS === 'web' && navigator.geolocation) {
-      try { await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(() => resolve(), reject)); permRef.granted = true; } catch {}
+      try { 
+        await new Promise((resolve, reject) => 
+          navigator.geolocation.getCurrentPosition(() => resolve(), reject, { timeout: 5000 })
+        ); 
+        permRef.granted = true; 
+      } catch {}
     }
-    if (!permRef.granted) Alert.alert('Location Required', 'Please enable location to send attendance pings.');
+    if (!permRef.granted) {
+      Alert.alert('Location Required', 'Please enable location to send attendance pings.');
+    }
     return permRef.granted;
   };
 
   const getSettings = async () => {
-    try { const res = await fetch('https://attendancesystem-backend-mias.onrender.com/admin/settings'); settingsRef.current = await res.json(); nextSettingsFetchAt = Date.now() + 60000; } catch {}
+    try { 
+      const res = await fetch(apiUrl('/admin/settings')); 
+      settingsRef.current = await res.json(); 
+      nextSettingsFetchAt = Date.now() + 60000; 
+    } catch (err) {
+      console.error('Failed to fetch settings:', err);
+    }
   };
 
   const withinWindow = (now, s) => {
@@ -121,134 +137,215 @@ useEffect(() => {
     const a = (sh||0)*60 + (sm||0), b = (eh||0)*60 + (em||0);
     return m >= a && m <= b;
   };
-  const currentPeriod = (now, s) => {
-    if (!s?.startTime || !s?.endTime) return 1;
-    const [sh, sm] = String(s.startTime).split(':').map(Number);
-    const [eh, em] = String(s.endTime).split(':').map(Number);
-    const startM = (sh||0)*60 + (sm||0);
-    const endM = (eh||0)*60 + (em||0);
-    const total = Math.max(1, endM - startM);
-    const slot = Math.max(1, Math.round(total / 8));
-    const nowM = now.getHours()*60 + now.getMinutes();
-    const idx = Math.min(7, Math.max(0, Math.floor((nowM - startM) / slot)));
-    return idx + 1;
-  };
 
   const tick = async () => {
     if (sendingRef.sending) return;
     sendingRef.sending = true;
     try {
-      if (!settingsRef.current || Date.now() > nextSettingsFetchAt) await getSettings();
-    const s = settingsRef.current;
-    if (!s) return;
-
-    // Scope enforcement (class/year)
-    if (Array.isArray(s.classes) && s.classes.length && !s.classes.includes(user.class)) return;
-    if (Array.isArray(s.years) && s.years.length && !s.years.includes(Number(user.year))) return;
-
-    const ok = await ensurePermission();
-    if (!ok) return;
-
-    const now = new Date();
-    if (!withinWindow(now, s)) return;
-
-    // Determine working period: sequential, not time-sliced
-    const threshold = Math.max(1, Number(s.pingThresholdPerPeriod || 4));
-    const period = stateRef.currentPeriod || 1;
-    if (period > 8) return; // done for the day
-
-    const count = stateRef.perCounts[period] || 0;
-    if (count >= threshold) {
-      // advance to next period and reset count; next tick will send
-      stateRef.currentPeriod = Math.min(8, period + 1);
-      stateRef.perCounts[stateRef.currentPeriod] = 0;
-      return;
-    }
-
-    // Determine biometric trigger (optional)
-    let doBiometric = false;
-    const mode = s.biometricTriggerMode || 'pingNumber';
-    if (mode === 'pingNumber') {
-      const atN = Math.min(Math.max(1, Number(s.biometricAtPingNumber || 1)), threshold);
-      doBiometric = (count + 1) === atN;
-    } else if (mode === 'time') {
-      const m = now.getHours()*60 + now.getMinutes();
-      const windows = s.biometricTimeWindows || [];
-      doBiometric = windows.some(w => {
-        const [sh,sm] = String(w.start||'').split(':').map(Number);
-        const [eh,em] = String(w.end||'').split(':').map(Number);
-        const a = (sh||0)*60 + (sm||0);
-        const b = (eh||0)*60 + (em||0);
-        return m >= a && m <= b;
-      });
-    } else if (mode === 'period') {
-      const list = s.biometricPeriods || [];
-      doBiometric = list.includes(period) && (count === 0);
-    }
-
-    // Get location
-    let loc;
-    try { loc = await Location.getCurrentPositionAsync({}); } catch {
-      if (Platform.OS === 'web' && navigator.geolocation) {
-        try { loc = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition((p)=>resolve({ coords: { latitude: p.coords.latitude, longitude: p.coords.longitude } }), reject)); } catch {}
+      // Refresh settings if needed
+      if (!settingsRef.current || Date.now() > nextSettingsFetchAt) {
+        await getSettings();
       }
-    }
-    if (!loc) return;
+      const s = settingsRef.current;
+      if (!s) {
+        sendingRef.sending = false;
+        return;
+      }
 
-    // Optional biometric auth on device
-    let biometricVerified = false;
-    if (doBiometric) {
-      try {
-        if (typeof LocalAuthentication?.authenticateAsync === 'function') {
-          const res = await LocalAuthentication.authenticateAsync({ promptMessage: 'Verify identity' });
-          biometricVerified = !!res.success;
-        } else if (Platform.OS === 'web') {
-          biometricVerified = window.confirm('Biometric challenge: confirm to proceed');
+      // Scope enforcement (class/year)
+      if (Array.isArray(s.classes) && s.classes.length && !s.classes.includes(user.class)) {
+        sendingRef.sending = false;
+        return;
+      }
+      if (Array.isArray(s.years) && s.years.length && !s.years.includes(Number(user.year))) {
+        sendingRef.sending = false;
+        return;
+      }
+
+      const ok = await ensurePermission();
+      if (!ok) {
+        sendingRef.sending = false;
+        return;
+      }
+
+      const now = new Date();
+      if (!withinWindow(now, s)) {
+        sendingRef.sending = false;
+        return;
+      }
+
+      // Get current period and threshold
+      const threshold = Math.max(1, Number(s.pingThresholdPerPeriod || 4));
+      let period = stateRef.currentPeriod || 1;
+      
+      // If we've completed all 8 periods, stop
+      if (period > 8) {
+        sendingRef.sending = false;
+        return;
+      }
+
+      // Check if current period has reached threshold
+      const count = stateRef.perCounts[period] || 0;
+      if (count >= threshold) {
+        // Move to next period
+        stateRef.currentPeriod = Math.min(8, period + 1);
+        period = stateRef.currentPeriod;
+        // Reset count for new period
+        stateRef.perCounts[period] = 0;
+        
+        // If we've completed all periods, stop
+        if (period > 8) {
+          sendingRef.sending = false;
+          return;
         }
-      } catch {}
-    }
+      }
 
-    try {
-      await fetch('https://attendancesystem-backend-mias.onrender.com/attendance/mark', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          studentId: user._id,
-          periodNumber: period,
-          timestampType: ['start','afterStart15','beforeEnd10','end'][Math.min(count,3)],
-          location: { latitude: loc.coords.latitude, longitude: loc.coords.longitude },
-          biometricType: doBiometric ? 'fingerprint' : null,
-          biometricVerified
-        })
-      });
-      stateRef.perCounts[period] = count + 1;
-      await refreshAttendance(user._id);
-    } catch {}
-  } finally {
-    sendingRef.sending = false;
-  }
-};
+      // Determine biometric trigger (optional)
+      let doBiometric = false;
+      const mode = s.biometricTriggerMode || 'pingNumber';
+      const currentCount = stateRef.perCounts[period] || 0;
+      if (mode === 'pingNumber') {
+        const atN = Math.min(Math.max(1, Number(s.biometricAtPingNumber || 1)), threshold);
+        doBiometric = (currentCount + 1) === atN;
+      } else if (mode === 'time') {
+        const m = now.getHours()*60 + now.getMinutes();
+        const windows = s.biometricTimeWindows || [];
+        doBiometric = windows.some(w => {
+          const [sh,sm] = String(w.start||'').split(':').map(Number);
+          const [eh,em] = String(w.end||'').split(':').map(Number);
+          const a = (sh||0)*60 + (sm||0);
+          const b = (eh||0)*60 + (em||0);
+          return m >= a && m <= b;
+        });
+      } else if (mode === 'period') {
+        const list = s.biometricPeriods || [];
+        doBiometric = list.includes(period) && (currentCount === 0);
+      }
+
+      // Get location
+      let loc;
+      try { 
+        loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }); 
+      } catch {
+        if (Platform.OS === 'web' && navigator.geolocation) {
+          try { 
+            loc = await new Promise((resolve, reject) => 
+              navigator.geolocation.getCurrentPosition(
+                (p) => resolve({ coords: { latitude: p.coords.latitude, longitude: p.coords.longitude } }), 
+                reject,
+                { enableHighAccuracy: true, timeout: 8000 }
+              )
+            ); 
+          } catch {}
+        }
+      }
+      if (!loc) {
+        sendingRef.sending = false;
+        return;
+      }
+
+      // Optional biometric auth on device
+      let biometricVerified = false;
+      if (doBiometric) {
+        try {
+          if (typeof LocalAuthentication?.authenticateAsync === 'function') {
+            const res = await LocalAuthentication.authenticateAsync({ promptMessage: 'Verify identity for attendance' });
+            biometricVerified = !!res.success;
+          } else if (Platform.OS === 'web') {
+            biometricVerified = window.confirm('Biometric challenge: confirm to proceed');
+          }
+        } catch (err) {
+          console.error('Biometric auth error:', err);
+        }
+      }
+
+      // Send ping
+      try {
+        const timestampTypes = ['start', 'afterStart15', 'beforeEnd10', 'end'];
+        const timestampType = timestampTypes[Math.min(currentCount, timestampTypes.length - 1)];
+        
+        const response = await fetch(apiUrl('/attendance/mark'), {
+          method: 'POST', 
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            studentId: user._id,
+            periodNumber: period,
+            timestampType: timestampType,
+            location: { latitude: loc.coords.latitude, longitude: loc.coords.longitude },
+            biometricType: doBiometric ? 'fingerprint' : null,
+            biometricVerified
+          })
+        });
+
+        if (response.ok) {
+          // Increment count for this period
+          stateRef.perCounts[period] = (stateRef.perCounts[period] || 0) + 1;
+          // Refresh attendance display
+          await refreshAttendance(user._id);
+          console.log(`Ping sent for period ${period}, count: ${stateRef.perCounts[period]}/${threshold}`);
+        } else {
+          const errorData = await response.json().catch(() => ({}));
+          console.error('Ping failed:', errorData.error || response.status);
+        }
+      } catch (err) {
+        console.error('Ping error:', err);
+      }
+    } finally {
+      sendingRef.sending = false;
+    }
+  };
 
   const start = async () => {
-    await ensurePermission();
-    await getSettings();
-    // Seed currentPeriod from today's attendance (max present period + 1)
     try {
-      const res = await fetch(`https://attendancesystem-backend-mias.onrender.com/attendance/today/${user._id}`);
-      const data = await res.json();
-      const periods = Array.isArray(data?.periods) ? data.periods : [];
-      let maxP = 0; for (const p of periods) { if (p.status==='present') maxP = Math.max(maxP, Number(p.periodNumber)||0); }
-      stateRef.currentPeriod = Math.min(8, Math.max(1, maxP + 1));
-      stateRef.perCounts = {}; // fresh counts for the next period
-    } catch {}
-    const s = settingsRef.current || {};
-    const ms = Math.max(5000, Number(s.pingIntervalMs || 60000));
-    timer = setInterval(tick, ms);
-    // immediate first ping after login
-    tick();
+      // Get permissions first
+      await ensurePermission();
+      
+      // Load settings
+      await getSettings();
+      
+      // Check today's attendance to determine starting period
+      try {
+        const res = await fetch(apiUrl(`/attendance/today/${user._id}`));
+        const data = await res.json();
+        const periods = Array.isArray(data?.periods) ? data.periods : [];
+        let maxP = 0; 
+        for (const p of periods) { 
+          if (p.status === 'present') {
+            maxP = Math.max(maxP, Number(p.periodNumber) || 0); 
+          }
+        }
+        // Start from next incomplete period
+        stateRef.currentPeriod = Math.min(8, Math.max(1, maxP + 1));
+        stateRef.perCounts = {}; // Reset counts for fresh start
+        console.log(`Starting pings from period ${stateRef.currentPeriod}`);
+      } catch (err) {
+        console.error('Failed to load today attendance:', err);
+        stateRef.currentPeriod = 1; // Default to period 1
+      }
+      
+      // Get interval from settings
+      const s = settingsRef.current || {};
+      const ms = Math.max(1000, Number(s.pingIntervalMs || 60000)); // Minimum 1 second
+      
+      // Start timer
+      timer = setInterval(tick, ms);
+      
+      // Send first ping immediately after login
+      console.log('Starting auto-pinger, sending first ping...');
+      setTimeout(() => tick(), 500); // Small delay to ensure everything is ready
+    } catch (err) {
+      console.error('Failed to start auto-pinger:', err);
+    }
   };
 
   start();
-  return () => { if (timer) clearInterval(timer); };
+  
+  return () => { 
+    if (timer) {
+      clearInterval(timer);
+      console.log('Auto-pinger stopped');
+    }
+  };
 }, [user]);
 
 
@@ -319,7 +416,7 @@ useEffect(() => {
       // Send with timeout so failures surface quickly
       const controller = new AbortController();
       const t = setTimeout(() => controller.abort(), 10000);
-      const response = await fetch('https://attendancesystem-backend-mias.onrender.com/attendance/mark', {
+      const response = await fetch(apiUrl('/attendance/mark'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ studentId: user._id, periodNumber, timestampType, location: current }),
@@ -389,21 +486,45 @@ useEffect(() => {
               {(() => {
                 const presentSet = new Set((attendance||[]).filter(p=>p.status==='present').map(p=>Number(p.periodNumber)));
                 const ord = ['1st','2nd','3rd','4th','5th','6th','7th','8th'];
+                const s = settingsRef.current || {};
+                // Determine which periods are "decided" (past windows)
+                const now = new Date();
+                let decidedPeriod = 8;
+                try {
+                  if (s?.startTime && s?.endTime) {
+                    const [sh, sm] = String(s.startTime).split(':').map(Number);
+                    const [eh, em] = String(s.endTime).split(':').map(Number);
+                    const startM = (sh||0)*60 + (sm||0);
+                    const endM = (eh||0)*60 + (em||0);
+                    const total = Math.max(1, endM - startM);
+                    const slot = Math.max(1, Math.round(total / 8));
+                    const nowM = now.getHours()*60 + now.getMinutes();
+                    const idx = Math.min(7, Math.max(-1, Math.floor((nowM - startM) / slot) - 1));
+                    decidedPeriod = Math.max(0, Math.min(8, idx + 1));
+                  }
+                } catch {}
                 const lines = [];
                 for (let i=1;i<=8;i++) {
-                  const st = presentSet.has(i) ? 'present' : 'absent';
+                  let label = '-';
+                  if (i <= decidedPeriod) {
+                    label = presentSet.has(i) ? 'present' : 'absent';
+                  }
+                  const color = label==='present' ? '#0f0' : (label==='absent' ? '#f00' : '#ddd');
                   lines.push(
-                    <Text key={i} style={{ color: st==='present' ? '#0f0' : '#f00', fontSize: 16, marginBottom: 4 }}>
-                      {ord[i-1]} period - {st}
+                    <Text key={i} style={{ color, fontSize: 16, marginBottom: 4 }}>
+                      {ord[i-1]} period - {label}
                     </Text>
                   );
                 }
-                const overall = presentSet.size===8 ? 'present' : (presentSet.size>0 ? 'partial' : 'absent');
-                lines.push(
-                  <Text key="overall" style={{ color: overall==='present' ? '#0f0' : '#f00', fontSize: 16, marginTop: 6 }}>
-                    overall attendance - {overall}
-                  </Text>
-                );
+                // Show overall only when all periods decided
+                if (decidedPeriod === 8) {
+                  const overall = presentSet.size===8 ? 'present' : 'absent';
+                  lines.push(
+                    <Text key="overall" style={{ color: overall==='present' ? '#0f0' : '#f00', fontSize: 16, marginTop: 6 }}>
+                      overall attendance - {overall}
+                    </Text>
+                  );
+                }
                 return lines;
               })()}
             </View>
@@ -439,7 +560,7 @@ useEffect(() => {
                     // notify backend about logout
                     try {
                       if (user?.username) {
-                        await fetch('https://attendancesystem-backend-mias.onrender.com/logout', {
+                        await fetch(apiUrl('/logout'), {
                           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: user.username })
                         });
                       }

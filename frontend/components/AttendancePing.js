@@ -1,11 +1,12 @@
 import * as Location from 'expo-location';
 import { useEffect, useState } from 'react';
 import { Alert, Button, StyleSheet, Text, View } from 'react-native';
+import { apiUrl } from '../utils/api';
 
 export default function AttendancePing({ studentId }) {
   const [location, setLocation] = useState(null);
   const [status, setStatus] = useState('');
- const BACKEND_URL = 'https://attendancesystem-backend-mias.onrender.com/attendance/mark';
+  const BACKEND_URL = apiUrl('/attendance/mark');
 
 
   useEffect(() => {
