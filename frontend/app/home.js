@@ -196,14 +196,14 @@ useEffect(() => {
         return;
       }
 
-      // Check if current period has reached threshold
-      const count = stateRef.perCounts[period] || 0;
-      if (count >= threshold) {
+      // Get current count for this period (before sending new ping)
+      let currentCount = stateRef.perCounts[period] || 0;
+      
+      // Check if current period has reached threshold - if so, move to next period
+      if (currentCount >= threshold) {
         // Move to next period
         stateRef.currentPeriod = Math.min(8, period + 1);
         period = stateRef.currentPeriod;
-        // Reset count for new period
-        stateRef.perCounts[period] = 0;
         
         // If we've completed all periods, stop
         if (period > 8) {
@@ -211,15 +211,18 @@ useEffect(() => {
           setStatus('All periods completed for today');
           return;
         }
+        // Reset count for new period and continue to send first ping
+        stateRef.perCounts[period] = 0;
+        currentCount = 0; // Update currentCount for new period
       }
 
-      // Determine biometric trigger (optional)
+      // Determine biometric trigger (optional) - use current count
+      const actualCountForBio = currentCount;
       let doBiometric = false;
       const mode = s.biometricTriggerMode || 'pingNumber';
-      const currentCount = stateRef.perCounts[period] || 0;
       if (mode === 'pingNumber') {
         const atN = Math.min(Math.max(1, Number(s.biometricAtPingNumber || 1)), threshold);
-        doBiometric = (currentCount + 1) === atN;
+        doBiometric = (actualCountForBio + 1) === atN;
       } else if (mode === 'time') {
         const m = now.getHours()*60 + now.getMinutes();
         const windows = s.biometricTimeWindows || [];
@@ -232,7 +235,7 @@ useEffect(() => {
         });
       } else if (mode === 'period') {
         const list = s.biometricPeriods || [];
-        doBiometric = list.includes(period) && (currentCount === 0);
+        doBiometric = list.includes(period) && (actualCountForBio === 0);
       }
 
       // Get location
@@ -272,10 +275,37 @@ useEffect(() => {
         }
       }
 
+      // Double-check period count before sending (prevent race conditions)
+      if (currentCount >= threshold) {
+        // Period already completed, skip this tick
+        sendingRef.sending = false;
+        return;
+      }
+      
       // Send ping
       try {
-        const timestampTypes = ['start', 'afterStart15', 'beforeEnd10', 'end'];
-        const timestampType = timestampTypes[Math.min(currentCount, timestampTypes.length - 1)];
+        // Map ping number to timestamp type based on threshold
+        // 2 pings: start, end
+        // 3 pings: start, afterStart15, end
+        // 4 pings: start, afterStart15, beforeEnd10, end
+        let timestampType = 'start';
+        const pingIndex = currentCount; // 0-indexed (0, 1, 2, 3)
+        
+        if (threshold === 2) {
+          // 2 pings: start, end
+          timestampType = pingIndex === 0 ? 'start' : 'end';
+        } else if (threshold === 3) {
+          // 3 pings: start, afterStart15, end
+          if (pingIndex === 0) timestampType = 'start';
+          else if (pingIndex === 1) timestampType = 'afterStart15';
+          else timestampType = 'end';
+        } else if (threshold >= 4) {
+          // 4+ pings: start, afterStart15, beforeEnd10, end
+          if (pingIndex === 0) timestampType = 'start';
+          else if (pingIndex === 1) timestampType = 'afterStart15';
+          else if (pingIndex === threshold - 1) timestampType = 'end';
+          else timestampType = 'beforeEnd10'; // For any middle pings
+        }
         
         const response = await fetch(apiUrl('/attendance/mark'), {
           method: 'POST', 
@@ -291,11 +321,18 @@ useEffect(() => {
         });
 
         if (response.ok) {
-          // Increment count for this period
-          stateRef.perCounts[period] = (stateRef.perCounts[period] || 0) + 1;
-          // Refresh attendance display
-          await refreshAttendance(user._id);
-          setStatus(`Ping ${stateRef.perCounts[period]}/${threshold} sent for period ${period}`);
+          // Increment count for this period AFTER successful ping
+          const newCount = currentCount + 1;
+          stateRef.perCounts[period] = newCount;
+          
+          // Only refresh attendance after completing threshold
+          if (newCount >= threshold) {
+            await refreshAttendance(user._id);
+            setStatus(`Period ${period} completed (${threshold}/${threshold} pings)`);
+            // The next tick will automatically advance to next period
+          } else {
+            setStatus(`Ping ${newCount}/${threshold} sent for period ${period} (${timestampType})`);
+          }
         } else {
           let msg = '';
           try { const errorData = await response.json(); msg = errorData?.error || ''; } catch {}
