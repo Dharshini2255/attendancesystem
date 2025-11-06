@@ -24,6 +24,7 @@ export default function AdminDashboard() {
 
   const [from, setFrom] = useState(new Date().toLocaleDateString('en-CA'));
   const [to, setTo] = useState(new Date().toLocaleDateString('en-CA'));
+  const [pingsLoading, setPingsLoading] = useState(false);
   const [granularity, setGranularity] = useState('day');
   const [query, setQuery] = useState('');
   const [showFilters, setShowFilters] = useState(false);
@@ -48,7 +49,7 @@ export default function AdminDashboard() {
         const v = await AsyncStorage.getItem('adminAuth');
         if (v === 'true') {
           setAuthorized(true);
-          await Promise.all([loadUsers(), loadAttendance(), loadPings(true), loadNotifications(), loadSessions(), readControl()]);
+          await Promise.all([loadUsers(), loadAttendance(), loadPings(false), loadNotifications(), loadSessions(), readControl()]);
         } else {
           Alert.alert('Unauthorized', 'Admin access required');
           router.replace('/login');
@@ -63,7 +64,8 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (!authorized || tab !== 'dashboard') return;
     const interval = setInterval(() => {
-      loadPings(true); // Load today's pings for current locations
+      loadPings(true); // Load today's pings for current locations (for map)
+      loadPings(false); // Load all pings for Recent Pings table
       loadUsers();
       loadAttendance();
       loadNotifications();
@@ -171,9 +173,11 @@ export default function AdminDashboard() {
         setUserLocations(locations);
       }
       console.log('Loaded pings:', data?.length || 0, 'useToday:', useToday);
+      setPingsLoading(false);
     } catch (err) {
       console.error('Error loading pings:', err);
       if (!useToday) setPings([]);
+      setPingsLoading(false);
     }
   };
 
@@ -578,7 +582,7 @@ export default function AdminDashboard() {
             <Panel style={styles.fullRow}>
               <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center'}}>
                 <Text style={styles.panelTitle}>Recent Pings</Text>
-                <TouchableOpacity onPress={loadPings}><Text style={styles.link}>Refresh</Text></TouchableOpacity>
+                <TouchableOpacity onPress={() => loadPings(false)}><Text style={styles.link}>Refresh</Text></TouchableOpacity>
               </View>
               <TableContainer>
                 <View style={styles.tableHeader}>
@@ -603,7 +607,7 @@ export default function AdminDashboard() {
                       <TouchableOpacity onPress={async()=>{
                         try {
                           await fetch(apiUrl(`/admin/ping/${encodeURIComponent(p._id)}`), { method: 'DELETE' });
-                          await loadPings();
+                          await loadPings(false);
                           await loadAttendance();
                         } catch {}
                       }} style={[styles.secondaryBtn,{backgroundColor:'rgba(239,68,68,0.2)', paddingVertical:4,paddingHorizontal:8}]}>

@@ -94,7 +94,7 @@ useEffect(() => {
 useEffect(() => {
   if (!user) return;
   let timer = null;
-  const stateRef = { perCounts: {}, currentPeriod: 1 };
+  const stateRef = { perCounts: {}, currentPeriod: 1, allPeriodsComplete: false };
   const permRef = { granted: false };
   const sendingRef = { sending: false };
   let nextSettingsFetchAt = 0;
@@ -142,6 +142,11 @@ useEffect(() => {
   };
 
   const tick = async () => {
+    // Stop if all periods are complete
+    if (stateRef.allPeriodsComplete) {
+      return;
+    }
+    // Prevent concurrent executions
     if (sendingRef.sending) return;
     sendingRef.sending = true;
     try {
@@ -205,10 +210,16 @@ useEffect(() => {
         stateRef.currentPeriod = Math.min(8, period + 1);
         period = stateRef.currentPeriod;
         
-        // If we've completed all periods, stop
+        // If we've completed all periods, stop completely
         if (period > 8) {
           sendingRef.sending = false;
+          stateRef.allPeriodsComplete = true;
           setStatus('All periods completed for today');
+          // Clear the timer to stop ping generation
+          if (timer) {
+            clearInterval(timer);
+            timer = null;
+          }
           return;
         }
         // Reset count for new period and continue to send first ping
@@ -554,30 +565,22 @@ useEffect(() => {
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Current Day Attendance</Text>
               {(() => {
+                // Create a map of period number to status
+                const periodStatusMap = {};
+                (attendance || []).forEach(p => {
+                  periodStatusMap[Number(p.periodNumber)] = p.status;
+                });
+                
                 const presentSet = new Set((attendance||[]).filter(p=>p.status==='present').map(p=>Number(p.periodNumber)));
                 const ord = ['1st','2nd','3rd','4th','5th','6th','7th','8th'];
-                const s = settingsRef.current || {};
-                // Determine which periods are "decided" (past windows)
-                const now = new Date();
-                let decidedPeriod = 8;
-                try {
-                  if (s?.startTime && s?.endTime) {
-                    const [sh, sm] = String(s.startTime).split(':').map(Number);
-                    const [eh, em] = String(s.endTime).split(':').map(Number);
-                    const startM = (sh||0)*60 + (sm||0);
-                    const endM = (eh||0)*60 + (em||0);
-                    const total = Math.max(1, endM - startM);
-                    const slot = Math.max(1, Math.round(total / 8));
-                    const nowM = now.getHours()*60 + now.getMinutes();
-                    const idx = Math.min(7, Math.max(-1, Math.floor((nowM - startM) / slot) - 1));
-                    decidedPeriod = Math.max(0, Math.min(8, idx + 1));
-                  }
-                } catch {}
                 const lines = [];
+                
+                // Show all periods - if status exists, show it; otherwise show '-'
                 for (let i=1;i<=8;i++) {
+                  const status = periodStatusMap[i];
                   let label = '-';
-                  if (i <= decidedPeriod) {
-                    label = presentSet.has(i) ? 'present' : 'absent';
+                  if (status === 'present' || status === 'absent') {
+                    label = status;
                   }
                   const color = label==='present' ? '#0f0' : (label==='absent' ? '#f00' : '#ddd');
                   lines.push(
@@ -586,8 +589,10 @@ useEffect(() => {
                     </Text>
                   );
                 }
-                // Show overall only when all periods decided
-                if (decidedPeriod === 8) {
+                
+                // Show overall only when all 8 periods have status (present or absent)
+                const allDecided = Array.from({length: 8}, (_, i) => i + 1).every(p => periodStatusMap[p] === 'present' || periodStatusMap[p] === 'absent');
+                if (allDecided) {
                   const overall = presentSet.size===8 ? 'present' : 'absent';
                   lines.push(
                     <Text key="overall" style={{ color: overall==='present' ? '#0f0' : '#f00', fontSize: 16, marginTop: 6 }}>
