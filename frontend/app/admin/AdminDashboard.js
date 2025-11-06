@@ -836,7 +836,7 @@ export default function AdminDashboard() {
 
                 <Text style={styles.muted}>Biometric trigger mode</Text>
                 <View style={styles.segmentRow}>
-                  {['pingNumber','time','period'].map(m => (
+                  {['off','pingNumber','time','period'].map(m => (
                     <TouchableOpacity key={m} onPress={()=>setSettings({ ...settings, biometricTriggerMode: m })} style={[styles.segmentBtn, (settings.biometricTriggerMode||'pingNumber')===m && styles.segmentActive]}>
                       <Text style={styles.segmentLabel}>{m}</Text>
                     </TouchableOpacity>
@@ -1032,7 +1032,38 @@ export default function AdminDashboard() {
             </View>
 
             {/* Overall Attendance */}
-            <Text style={styles.panelTitle}>Overall Attendance</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <Text style={styles.panelTitle}>Overall Attendance</Text>
+              {Platform.OS === 'web' && (
+                <TouchableOpacity onPress={() => {
+                  const headers = ['Date', 'P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8', 'Overall'];
+                  const rows = (historyData.records || []).map(r => {
+                    const statusByPeriod = {};
+                    (r.periods || []).forEach(p => { statusByPeriod[p.periodNumber] = p.status; });
+                    const presentCount = (r.periods || []).filter(p => p.status === 'present').length;
+                    const overall = presentCount === 8 ? 'present' : (presentCount > 0 ? 'partial' : 'absent');
+                    const periodStatuses = [];
+                    for (let i = 1; i <= 8; i++) {
+                      periodStatuses.push(statusByPeriod[i] || 'absent');
+                    }
+                    return [r.date, ...periodStatuses, overall].join(',');
+                  });
+                  const csv = [headers.join(','), ...rows].join('\n');
+                  const blob = new Blob([csv], { type: 'text/csv' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `overall_attendance_${historyUser?.name || 'student'}_${historyFrom}_to_${historyTo}.csv`;
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  URL.revokeObjectURL(url);
+                }} style={styles.exportButton}>
+                  <Ionicons name="download-outline" size={16} color="#fff" />
+                  <Text style={styles.exportButtonText}>Export CSV</Text>
+                </TouchableOpacity>
+              )}
+            </View>
             <TableContainer minWidth={900}>
               <View style={styles.tableHeader}>
                 <Text style={[styles.th,{flex:1.2}]}>Date</Text>
@@ -1094,27 +1125,34 @@ export default function AdminDashboard() {
                 // Calculate period statuses: use recorded status if available, otherwise calculate from pings
                 const periodStatuses = {};
                 for(let pnum=1; pnum<=8; pnum++) {
-                  if(pnum < startPeriod) {
-                    periodStatuses[pnum] = '-';
-                  } else if(statusByPeriod[pnum]) {
-                    periodStatuses[pnum] = statusByPeriod[pnum]; // Use recorded status
+                  if(statusByPeriod[pnum]) {
+                    // Use recorded attendance status if available
+                    periodStatuses[pnum] = statusByPeriod[pnum];
                   } else {
                     // Calculate from valid pings
                     const validCount = (validPingsByDatePeriod[r.date] && validPingsByDatePeriod[r.date][pnum]) || 0;
-                    periodStatuses[pnum] = validCount >= threshold ? 'present' : (validCount > 0 ? 'absent' : 'absent');
+                    // If there are any pings, determine if present or absent based on threshold
+                    if(validCount > 0) {
+                      periodStatuses[pnum] = validCount >= threshold ? 'present' : 'absent';
+                    } else {
+                      // No pings at all - show absent
+                      periodStatuses[pnum] = 'absent';
+                    }
                   }
                 }
                 
                 const presentSet = new Set(Object.keys(periodStatuses).filter(p=>periodStatuses[p]==='present').map(Number));
-                const required = 8 - startPeriod + 1;
-                const overall = presentSet.size >= required ? 'present' : (presentSet.size>0 ? 'partial' : 'absent');
+                // Calculate overall: present if all 8 periods are present
+                const presentCount = presentSet.size;
+                const overall = presentCount === 8 ? 'present' : (presentCount > 0 ? 'partial' : 'absent');
                 return (
                   <View key={i} style={[styles.tableRow, { alignItems:'center' }]}>
                     <Text style={[styles.td,{flex:1.2}]}>{r.date}</Text>
                     {Array.from({length:8}).map((_,idx)=> {
                       const pnum = idx+1;
-                      const val = periodStatuses[pnum] || '-';
-                      const color = val==='present'?'#10b981':(val==='absent'?'#ef4444':'#64748b');
+                      // Show present/absent for all periods, never show '-'
+                      const val = periodStatuses[pnum] || 'absent';
+                      const color = val==='present'?'#10b981':'#ef4444';
                       return (<Text key={idx} style={[styles.td,{flex:1, color}]}>{val}</Text>);
                     })}
                     <Text style={[styles.td,{flex:1.5, color: overall==='present'?'#10b981':(overall==='partial'?'#f59e0b':'#ef4444')}]}>{overall}</Text>
@@ -1139,7 +1177,71 @@ export default function AdminDashboard() {
 
             {/* Detailed Attendance */}
             <View style={{ height: 12 }} />
-            <Text style={styles.panelTitle}>Detailed Attendance</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <Text style={styles.panelTitle}>Detailed Attendance</Text>
+              {Platform.OS === 'web' && (
+                <TouchableOpacity onPress={() => {
+                  const s = settingsCache||{};
+                  const threshold = Math.max(1, Number(s.pingThresholdPerPeriod || 4));
+                  const collegePoly = s.collegePolygon||[];
+                  const campusRadius= 50000;
+                  const toRad = (v)=> (v*Math.PI)/180; const R=6371000;
+                  const dist=(a,b)=>{ const dLat=toRad(a.latitude-b.latitude), dLon=toRad(a.longitude-b.longitude); const lat1=toRad(b.latitude), lat2=toRad(a.latitude); const h=Math.sin(dLat/2)**2+Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2; return 2*R*Math.atan2(Math.sqrt(h),Math.sqrt(1-h)); };
+                  const pinPoly=(pt,poly)=>{ if(!poly||poly.length<3) return false; let inside=false; for(let i=0,j=poly.length-1;i<poly.length;j=i++){const xi=poly[i].latitude, yi=poly[i].longitude; const xj=poly[j].latitude, yj=poly[j].longitude; const intersect=((yi>pt.longitude)!==(yj>pt.longitude)) && (pt.latitude < (xj - xi) * (pt.longitude - yi) / (yj - yi + 1e-12) + xi); if(intersect) inside=!inside;} return inside; };
+                  const liveAnchors = s.proximityAnchors||[];
+                  const singleAnchor = s.proximityLocation; const singleR = s.proximityRadiusMeters||100;
+                  const byDate = {};
+                  (historyData.pings||[]).forEach(p=>{
+                    const d = new Date(p.timestamp).toLocaleDateString('en-CA');
+                    if(!byDate[d]) byDate[d]=[]; byDate[d].push(p);
+                  });
+                  const attendanceByDatePeriod = {};
+                  (historyData.records||[]).forEach(r=>{
+                    if(!attendanceByDatePeriod[r.date]) attendanceByDatePeriod[r.date]={};
+                    (r.periods||[]).forEach(p=>{
+                      attendanceByDatePeriod[r.date][p.periodNumber] = p.status;
+                    });
+                  });
+                  const csvRows = [];
+                  Object.keys(byDate).sort().forEach(d=>{
+                    const validPingsByPeriod = {};
+                    byDate[d].forEach(p=>{
+                      const loc = { latitude: p.location?.latitude, longitude: p.location?.longitude };
+                      const inCollege = (collegePoly.length>=3 ? pinPoly(loc, collegePoly) : (s.useCollegeLocation && s.collegeLocation && dist(loc, s.collegeLocation)<=campusRadius));
+                      let inLive = false; if(singleAnchor?.latitude){ inLive = dist(loc, singleAnchor)<=singleR; }
+                      for(const a of liveAnchors){ if(a?.location?.latitude && dist(loc,a.location)<= (a.radiusMeters||100)) { inLive=true; break; } }
+                      if(inCollege || inLive) {
+                        const period = p.periodNumber || 0;
+                        if(!validPingsByPeriod[period]) validPingsByPeriod[period] = 0;
+                        validPingsByPeriod[period]++;
+                      }
+                    });
+                    for(let p=1; p<=8; p++) {
+                      const validCount = validPingsByPeriod[p] || 0;
+                      const status = attendanceByDatePeriod[d] && attendanceByDatePeriod[d][p] 
+                        ? attendanceByDatePeriod[d][p] 
+                        : (validCount >= threshold ? 'present' : (validCount > 0 ? 'absent' : '-'));
+                      const locationText = (collegePoly.length>=3 ? pinPoly({latitude: byDate[d][0]?.location?.latitude, longitude: byDate[d][0]?.location?.longitude}, collegePoly) : (s.useCollegeLocation && s.collegeLocation && dist({latitude: byDate[d][0]?.location?.latitude, longitude: byDate[d][0]?.location?.longitude}, s.collegeLocation)<=campusRadius)) ? 'college' : 'live';
+                      csvRows.push([d, validCount, locationText, `P${p}`, status].join(','));
+                    }
+                  });
+                  const headers = ['Date', 'No. of Pings', 'Location', 'Period', 'Attendance'];
+                  const csv = [headers.join(','), ...csvRows].join('\n');
+                  const blob = new Blob([csv], { type: 'text/csv' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `detailed_attendance_${historyUser?.name || 'student'}_${historyFrom}_to_${historyTo}.csv`;
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  URL.revokeObjectURL(url);
+                }} style={styles.exportButton}>
+                  <Ionicons name="download-outline" size={16} color="#fff" />
+                  <Text style={styles.exportButtonText}>Export CSV</Text>
+                </TouchableOpacity>
+              )}
+            </View>
             <TableContainer minWidth={800}>
               <View style={styles.tableHeader}>
                 <Text style={[styles.th,{flex:1.2}]}>Date</Text>
@@ -1368,4 +1470,20 @@ const styles = StyleSheet.create({
   // History modal styles
   histBackdrop: { position:'fixed', top:0, left:0, right:0, bottom:0, backgroundColor:'rgba(0,0,0,0.5)', zIndex:2000, alignItems:'center', justifyContent:'center' },
   histCard: { width:'90%', maxWidth: 1100, maxHeight: '90%', padding:16, borderRadius:16, backgroundColor:'rgba(104, 100, 100, 0.95)', ...Platform.select({ web: { overflowY:'auto' }, default: {} }) },
+  
+  // Export button styles
+  exportButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#10b981',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    gap: 6,
+  },
+  exportButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
 });

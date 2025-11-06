@@ -437,7 +437,7 @@ const adminSettingsSchema = new mongoose.Schema({
   pingThresholdPerPeriod: { type: Number, default: 4 },
   pingIntervalMs: { type: Number, default: 60000 },
   // Biometric trigger configuration
-  biometricTriggerMode: { type: String, enum: ['pingNumber','time','period'], default: 'pingNumber' },
+  biometricTriggerMode: { type: String, enum: ['off','pingNumber','time','period'], default: 'pingNumber' },
   biometricAtPingNumber: { type: Number, default: 1 },
   biometricTimeWindows: [{ start: String, end: String }], // HH:mm
   biometricPeriods: [Number]

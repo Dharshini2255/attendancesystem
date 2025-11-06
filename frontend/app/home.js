@@ -220,7 +220,9 @@ useEffect(() => {
       const actualCountForBio = currentCount;
       let doBiometric = false;
       const mode = s.biometricTriggerMode || 'pingNumber';
-      if (mode === 'pingNumber') {
+      if (mode === 'off') {
+        doBiometric = false; // Biometric disabled
+      } else if (mode === 'pingNumber') {
         const atN = Math.min(Math.max(1, Number(s.biometricAtPingNumber || 1)), threshold);
         doBiometric = (actualCountForBio + 1) === atN;
       } else if (mode === 'time') {
@@ -264,14 +266,30 @@ useEffect(() => {
       let biometricVerified = false;
       if (doBiometric) {
         try {
-          if (typeof LocalAuthentication?.authenticateAsync === 'function') {
-            const res = await LocalAuthentication.authenticateAsync({ promptMessage: 'Verify identity for attendance' });
-            biometricVerified = !!res.success;
+          // Check if biometric is available
+          const hasHardware = await LocalAuthentication.hasHardwareAsync();
+          const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+          
+          if (hasHardware && isEnrolled) {
+            const res = await LocalAuthentication.authenticateAsync({ 
+              promptMessage: 'Verify identity for attendance',
+              cancelLabel: 'Cancel',
+              disableDeviceFallback: false
+            });
+            biometricVerified = res.success;
+            if (!res.success) {
+              setStatus('Biometric verification failed - ping will still be sent');
+            }
           } else if (Platform.OS === 'web') {
+            // Web fallback
             biometricVerified = window.confirm('Biometric challenge: confirm to proceed');
+          } else {
+            console.warn('Biometric not available or not enrolled');
+            setStatus('Biometric not available - continuing without verification');
           }
         } catch (err) {
           console.error('Biometric auth error:', err);
+          setStatus('Biometric error - continuing without verification');
         }
       }
 
