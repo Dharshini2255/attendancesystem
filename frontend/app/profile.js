@@ -637,7 +637,7 @@ const styles = StyleSheet.create({
   },
   uuidValue: {
     fontSize: 12,
-    fontFamily: Platform.OS === 'web' ? 'monospace' : 'monospace',
+    fontFamily: 'monospace',
   },
   filterRow: {
     flexDirection: 'row',

@@ -8,7 +8,8 @@ import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import { apiUrl } from '../../utils/api';
-import MapView, { Marker } from 'react-native-maps';
+import MapView from '../../components/maps/MapView';
+import Marker from '../../components/maps/Marker';
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -898,7 +899,7 @@ export default function AdminDashboard() {
                   <View style={styles.segmentRow}>
                     {[100,200].map(r => (
                       Platform.OS==='web' ? (
-                        <button key={r} onClick={()=>setSettings({ ...settings, proximityRadiusMeters: r })} style={{ padding: 8, borderRadius: 8, border: '1px solid #ccfbf1', background: (settings.proximityRadiusMeters||100)===r ? '#99f6e4' : 'transparent' }}>{r} m</button>
+                        <button key={r} onClick={()=>setSettings({ ...settings, proximityRadiusMeters: r })} style={{ padding: 8, borderRadius: 8, border: '1px solid #ccfbf1', backgroundColor: (settings.proximityRadiusMeters||100)===r ? '#99f6e4' : 'transparent' }}>{r} m</button>
                       ) : (
                         <TouchableOpacity key={r} onPress={()=>setSettings({ ...settings, proximityRadiusMeters: r })} style={[styles.segmentBtn, (settings.proximityRadiusMeters||100)===r && styles.segmentActive]}>
                           <Text style={styles.segmentLabel}>{r} m</Text>
@@ -1549,7 +1550,7 @@ const styles = StyleSheet.create({
   segmentLabel: { color:'#0f172a', fontWeight:'700' },
 
   input: { padding: 10, backgroundColor:'rgba(255,255,255,0.8)', borderRadius: 10, color:'#0f172a' },
-  webInput: { padding: 10, background: 'rgba(255, 255, 255, 1)', borderRadius: 10, border: '1px solid rgba(148,163,184,0.35)' },
+  webInput: { padding: 10, backgroundColor: 'rgba(255, 255, 255, 1)', borderRadius: 10, border: '1px solid rgba(148,163,184,0.35)' },
 
   // Table styles
   table: { width:'100%', borderRadius: 12, overflow:'hidden', ...Platform.select({ web: { border: '1px solid rgba(148,163,184,0.35)' }, default: {} }) },

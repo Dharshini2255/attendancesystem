@@ -791,8 +791,7 @@ useEffect(() => {
 const styles = StyleSheet.create({
   container: { 
     flex: 1, 
-    position: 'relative',
-    backgroundColor: '#000' 
+    backgroundColor: '#F5F5F5'
   },
   background: { 
     position: 'absolute',
