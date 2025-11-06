@@ -7,6 +7,7 @@ import { BlurView } from 'expo-blur';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
+import { apiUrl } from '../../utils/api';
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -71,43 +72,68 @@ export default function AdminDashboard() {
     return () => clearInterval(interval);
   }, [authorized, tab]);
 
-  const api = 'https://attendancesystem-backend-mias.onrender.com';
-
   const loadUsers = async () => {
     try {
-      const url = new URL(`${api}/admin/users`);
-      if (query) url.searchParams.set('q', query);
+      let url = apiUrl('/admin/users');
+      if (query) url += `?q=${encodeURIComponent(query)}`;
       const res = await fetch(url);
+      if (!res.ok) {
+        console.error('Failed to load users:', res.status, res.statusText);
+        setUsers([]);
+        return;
+      }
       const data = await res.json();
       setUsers(data || []);
-    } catch {}
+      console.log('Loaded users:', data?.length || 0);
+    } catch (err) {
+      console.error('Error loading users:', err);
+      setUsers([]);
+    }
   };
 
   const loadAttendance = async () => {
     try {
-      const url = new URL(`${api}/admin/attendance`);
-      url.searchParams.set('from', from);
-      url.searchParams.set('to', to);
-      url.searchParams.set('granularity', granularity);
-      if (query) url.searchParams.set('q', query);
+      let url = apiUrl('/admin/attendance');
+      const params = new URLSearchParams();
+      params.set('from', from);
+      params.set('to', to);
+      params.set('granularity', granularity);
+      if (query) params.set('q', query);
+      url += `?${params.toString()}`;
       const res = await fetch(url);
+      if (!res.ok) {
+        console.error('Failed to load attendance:', res.status, res.statusText);
+        setAttRows([]);
+        return;
+      }
       const data = await res.json();
       setAttRows(data.rows || []);
-    } catch {}
+      console.log('Loaded attendance rows:', data.rows?.length || 0);
+    } catch (err) {
+      console.error('Error loading attendance:', err);
+      setAttRows([]);
+    }
   };
 
   const loadPings = async (useToday = false) => {
     try {
-      const url = new URL(`${api}/admin/pings`);
+      let url = apiUrl('/admin/pings');
+      const params = new URLSearchParams();
       if (useToday) {
         const today = new Date().toLocaleDateString('en-CA');
-        url.searchParams.set('date', today);
+        params.set('date', today);
       } else {
-        url.searchParams.set('from', from);
-        url.searchParams.set('to', to);
+        params.set('from', from);
+        params.set('to', to);
       }
-      if (query) url.searchParams.set('q', query);
+      if (query) params.set('q', query);
+      url += `?${params.toString()}`;
       const res = await fetch(url);
+      if (!res.ok) {
+        console.error('Failed to load pings:', res.status, res.statusText);
+        if (!useToday) setPings([]);
+        return;
+      }
       const data = await res.json();
       
       if (useToday) {
@@ -144,55 +170,128 @@ export default function AdminDashboard() {
         });
         setUserLocations(locations);
       }
-    } catch {}
+      console.log('Loaded pings:', data?.length || 0, 'useToday:', useToday);
+    } catch (err) {
+      console.error('Error loading pings:', err);
+      if (!useToday) setPings([]);
+    }
   };
 
   const loadSessions = async () => {
     try {
-      const res = await fetch(`${api}/admin/sessions`);
+      const res = await fetch(apiUrl('/admin/sessions'));
+      if (!res.ok) {
+        console.error('Failed to load sessions:', res.status, res.statusText);
+        setSessions({ loggedIn: [], loggedOut: [], total: 0 });
+        return;
+      }
       const data = await res.json();
       setSessions(data || { loggedIn: [], loggedOut: [], total: 0 });
-    } catch {}
+      console.log('Loaded sessions:', data);
+    } catch (err) {
+      console.error('Error loading sessions:', err);
+      setSessions({ loggedIn: [], loggedOut: [], total: 0 });
+    }
   };
 
   const readControl = async () => {
     try {
-      const res = await fetch(`${api}/admin/ping-control`);
+      const res = await fetch(apiUrl('/admin/ping-control'));
+      if (!res.ok) {
+        console.error('Failed to load ping control:', res.status, res.statusText);
+        return;
+      }
       const data = await res.json();
       setCtrl({ pingEnabled: !!data.pingEnabled, intervalMs: data.intervalMs || 60000 });
-    } catch {}
+    } catch (err) {
+      console.error('Error loading ping control:', err);
+    }
   };
 
   const toggleControl = async (enabled) => {
     try {
-      const res = await fetch(`${api}/admin/ping-control`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled, intervalMs: ctrl.intervalMs }) });
+      const res = await fetch(apiUrl('/admin/ping-control'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled, intervalMs: ctrl.intervalMs }) });
+      if (!res.ok) {
+        console.error('Failed to update ping control:', res.status, res.statusText);
+        Alert.alert('Error', 'Failed to update ping control');
+        return;
+      }
       const data = await res.json();
       setCtrl({ pingEnabled: !!data.pingEnabled, intervalMs: data.intervalMs || ctrl.intervalMs });
-    } catch {}
+    } catch (err) {
+      console.error('Error updating ping control:', err);
+      Alert.alert('Error', 'Failed to update ping control');
+    }
   };
 
   const readSettings = async () => {
-    try { const res = await fetch(`${api}/admin/settings`); const data = await res.json(); setSettings(prev => ({ ...prev, ...data })); } catch {}
+    try { 
+      const res = await fetch(apiUrl('/admin/settings')); 
+      if (!res.ok) {
+        console.error('Failed to load settings:', res.status, res.statusText);
+        return;
+      }
+      const data = await res.json(); 
+      setSettings(prev => ({ ...prev, ...data })); 
+      console.log('Loaded settings:', data);
+    } catch (err) {
+      console.error('Error loading settings:', err);
+    }
   };
 
   const saveSettings = async () => {
-    try { await fetch(`${api}/admin/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) }); alert('Settings saved'); } catch {}
+    try { 
+      const res = await fetch(apiUrl('/admin/settings'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) }); 
+      if (!res.ok) {
+        console.error('Failed to save settings:', res.status, res.statusText);
+        Alert.alert('Error', 'Failed to save settings');
+        return;
+      }
+      Alert.alert('Success', 'Settings saved');
+    } catch (err) {
+      console.error('Error saving settings:', err);
+      Alert.alert('Error', 'Failed to save settings');
+    }
   };
 
   const loadNotifications = async () => {
-    try { const res = await fetch(`${api}/admin/notifications`); const data = await res.json(); setNotifications(data.alerts || []); } catch {}
+    try { 
+      const res = await fetch(apiUrl('/admin/notifications')); 
+      if (!res.ok) {
+        console.error('Failed to load notifications:', res.status, res.statusText);
+        setNotifications([]);
+        return;
+      }
+      const data = await res.json(); 
+      setNotifications(data.alerts || []); 
+      console.log('Loaded notifications:', data.alerts?.length || 0);
+    } catch (err) {
+      console.error('Error loading notifications:', err);
+      setNotifications([]);
+    }
   };
 
-  const exportUsers = () => { 
-    const url = new URL(`${api}/admin/export/users.csv`);
-    if (query) url.searchParams.set('q', query);
-    window.location.assign(url);
+  const exportUsers = () => {
+    let url = apiUrl('/admin/export/users.csv');
+    if (query) url += `?q=${encodeURIComponent(query)}`;
+    if (Platform.OS === 'web') {
+      window.location.assign(url);
+    } else {
+      Linking.openURL(url).catch(err => console.error('Failed to open export URL:', err));
+    }
   };
   const exportAttendance = () => {
-    const url = new URL(`${api}/admin/export/attendance.csv`);
-    url.searchParams.set('from', from); url.searchParams.set('to', to);
-    if (query) url.searchParams.set('q', query);
-    window.location.assign(url);
+    let url = apiUrl('/admin/export/attendance.csv');
+    const params = new URLSearchParams();
+    params.set('from', from);
+    params.set('to', to);
+    if (query) params.set('q', query);
+    url += `?${params.toString()}`;
+    if (Platform.OS === 'web') {
+      window.location.assign(url);
+    } else {
+      Linking.openURL(url).catch(err => console.error('Failed to open export URL:', err));
+    }
   };
 
   const attendancePercent = useMemo(() => {
@@ -417,7 +516,12 @@ export default function AdminDashboard() {
                   <Text style={[styles.th,{flex:1}]}>Biometric</Text>
                   <Text style={[styles.th,{flex:1}]}>Tracking</Text>
                 </View>
-                {users.slice(0,12).map((u,i)=> {
+                {users.length === 0 ? (
+                  <View style={{ padding: 20, alignItems: 'center' }}>
+                    <Text style={[styles.td, { color: '#64748b' }]}>No students found</Text>
+                  </View>
+                ) : (
+                  users.slice(0,12).map((u,i)=> {
                   // Get latest ping location for this user
                   const userPings = (pings||[]).filter(p => String(p.studentId) === String(u._id));
                   const latestPing = userPings.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
@@ -464,7 +568,8 @@ export default function AdminDashboard() {
                       )}
                     </View>
                   );
-                })}
+                  })
+                )}
               </TableContainer>
 
             </Panel>
@@ -483,7 +588,12 @@ export default function AdminDashboard() {
                   <Text style={[styles.th, { flex: 1 }]}>Status</Text>
                   <Text style={[styles.th, { flex: 0.6, textAlign:'right' }]}></Text>
                 </View>
-                {pings.slice(0,20).map((p,i)=> (
+                {pings.length === 0 ? (
+                  <View style={{ padding: 20, alignItems: 'center' }}>
+                    <Text style={[styles.td, { color: '#64748b' }]}>No pings found</Text>
+                  </View>
+                ) : (
+                  pings.slice(0,20).map((p,i)=> (
                   <View key={i} style={[styles.tableRow, { alignItems:'center' }]}>
                     <Text style={[styles.td,{flex:2}]}>{new Date(p.timestamp).toLocaleString()}</Text>
                     <Text style={[styles.td,{flex:2}]}>{p.studentName||''} ({p.regNo||''})</Text>
@@ -492,7 +602,7 @@ export default function AdminDashboard() {
                     <View style={{ flex:0.6, alignItems:'flex-end' }}>
                       <TouchableOpacity onPress={async()=>{
                         try {
-                          await fetch(`${api}/admin/ping/${encodeURIComponent(p._id)}`, { method: 'DELETE' });
+                          await fetch(apiUrl(`/admin/ping/${encodeURIComponent(p._id)}`), { method: 'DELETE' });
                           await loadPings();
                           await loadAttendance();
                         } catch {}
@@ -501,7 +611,8 @@ export default function AdminDashboard() {
                       </TouchableOpacity>
                     </View>
                   </View>
-                ))}
+                  ))
+                )}
               </TableContainer>
             </Panel>
           </View>
@@ -576,18 +687,23 @@ export default function AdminDashboard() {
                     <Text style={[styles.th, { flex: 2.5 }]}>Email</Text>
                     <Text style={[styles.th, { flex: 1.5 }]}>Username</Text>
                   </View>
-                  {users.map((u, i) => (
+                  {users.length === 0 ? (
+                    <View style={{ padding: 20, alignItems: 'center' }}>
+                      <Text style={[styles.td, { color: '#64748b' }]}>No users found</Text>
+                    </View>
+                  ) : (
+                    users.map((u, i) => (
                     <View key={u._id || i} style={[styles.tableRow, { alignItems:'center' }]}>
                       <TouchableOpacity style={{ flex: 2 }} onPress={async ()=>{
                         setHistoryUser(u);
                         setHistoryOpen(true);
                         try {
-                          const s = await fetch(`${api}/admin/settings`).then(r=>r.json());
+                          const s = await fetch(apiUrl('/admin/settings')).then(r=>r.json());
                           setSettingsCache(s);
                         } catch {}
                         try {
                           const params = new URLSearchParams({ from: historyFrom, to: historyTo });
-                          const res = await fetch(`${api}/admin/student/${encodeURIComponent(u._id)}/history?${params}`);
+                          const res = await fetch(apiUrl(`/admin/student/${encodeURIComponent(u._id)}/history?${params}`));
                           const detail = await res.json();
                           setHistoryData(detail || { records: [], pings: [] });
                         } catch {}
@@ -605,7 +721,7 @@ export default function AdminDashboard() {
                             const newClass = Platform.OS==='web' ? window.prompt('Class', u.class||'') : u.class;
                             const newYearStr = Platform.OS==='web' ? window.prompt('Year (1-4)', String(u.year||'')) : String(u.year||'');
                             if (Platform.OS==='web') {
-                              await fetch(`${api}/admin/user`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ _id: u._id, class: newClass, year: Number(newYearStr||u.year) }) });
+                              await fetch(apiUrl('/admin/user'), { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ _id: u._id, class: newClass, year: Number(newYearStr||u.year) }) });
                               await loadUsers();
                             }
                           } catch {}
@@ -615,7 +731,7 @@ export default function AdminDashboard() {
                         <TouchableOpacity onPress={async()=>{
                           try {
                             if (Platform.OS==='web' && !window.confirm('Delete user?')) return;
-                            await fetch(`${api}/admin/user/${encodeURIComponent(u._id)}`, { method:'DELETE' });
+                            await fetch(apiUrl(`/admin/user/${encodeURIComponent(u._id)}`), { method:'DELETE' });
                             await loadUsers();
                           } catch {}
                         }} style={[styles.secondaryBtn,{backgroundColor:'rgba(239,68,68,0.2)', paddingVertical:4,paddingHorizontal:8}]}>
@@ -623,7 +739,8 @@ export default function AdminDashboard() {
                         </TouchableOpacity>
                       </View>
                     </View>
-                  ))}
+                    ))
+                  )}
                 </TableContainer>
               </Panel>
             ) : (
@@ -639,13 +756,18 @@ export default function AdminDashboard() {
                     <Text style={[styles.th, { flex: 1.5 }]}>Reg No</Text>
                     <Text style={[styles.th, { flex: 2 }]}>Details</Text>
                   </View>
-                  {attRows.map((r, i) => (
+                  {attRows.length === 0 ? (
+                    <View style={{ padding: 20, alignItems: 'center' }}>
+                      <Text style={[styles.td, { color: '#64748b' }]}>No attendance records found</Text>
+                    </View>
+                  ) : (
+                    attRows.map((r, i) => (
                     <View key={i} style={styles.tableRow}>
                       <Text style={[styles.td, { flex: 1.5 }]}>{r.date || r.bucket}</Text>
                       <TouchableOpacity style={{ flex: 2 }} onPress={async () => {
                         try {
                           const params = new URLSearchParams({ from: from, to: to });
-                          const res = await fetch(`${api}/admin/student/${encodeURIComponent(r.studentId)}/history?${params}`);
+                          const res = await fetch(apiUrl(`/admin/student/${encodeURIComponent(r.studentId)}/history?${params}`));
                           const detail = await res.json();
                           alert(JSON.stringify(detail, null, 2));
                         } catch {}
@@ -662,7 +784,7 @@ export default function AdminDashboard() {
                         <View style={{ flexDirection:'row', gap:8, marginLeft: 8 }}>
                           <TouchableOpacity onPress={async()=>{
                             try {
-                              await fetch(`${api}/admin/attendance`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ studentId: r.studentId, date: r.date, periodNumber: r.periodNumber, status: r.status === 'present' ? 'absent' : 'present' }) });
+                              await fetch(apiUrl('/admin/attendance'), { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ studentId: r.studentId, date: r.date, periodNumber: r.periodNumber, status: r.status === 'present' ? 'absent' : 'present' }) });
                               await loadAttendance();
                             } catch {}
                           }} style={[styles.secondaryBtn,{paddingVertical:4,paddingHorizontal:8}]}>
@@ -671,7 +793,7 @@ export default function AdminDashboard() {
                           <TouchableOpacity onPress={async()=>{
                             try {
                               const qs = new URLSearchParams({ studentId: r.studentId, date: r.date, periodNumber: String(r.periodNumber) });
-                              await fetch(`${api}/admin/attendance?${qs}`, { method:'DELETE' });
+                              await fetch(apiUrl(`/admin/attendance?${qs}`), { method:'DELETE' });
                               await loadAttendance();
                             } catch {}
                           }} style={[styles.secondaryBtn,{backgroundColor:'rgba(239,68,68,0.2)', paddingVertical:4,paddingHorizontal:8}]}>
@@ -680,9 +802,10 @@ export default function AdminDashboard() {
                         </View>
                       )}
                     </View>
-            ))}
-            </TableContainer>
-          </Panel>
+                    ))
+                  )}
+                </TableContainer>
+              </Panel>
             )}
           </View>
         )}
@@ -1025,8 +1148,8 @@ export default function AdminDashboard() {
                   <TextInput value={historyTo} onChangeText={setHistoryTo} style={styles.input} placeholder="YYYY-MM-DD" />
                 )}
                 <TouchableOpacity onPress={async ()=>{
-                  try { const s = await fetch(`${api}/admin/settings`).then(r=>r.json()); setSettingsCache(s); } catch {}
-                  try { const params = new URLSearchParams({ from: historyFrom, to: historyTo }); const res = await fetch(`${api}/admin/student/${encodeURIComponent(historyUser._id)}/history?${params}`); const detail=await res.json(); setHistoryData(detail || { records: [], pings: [] }); } catch {}
+                  try { const s = await fetch(apiUrl('/admin/settings')).then(r=>r.json()); setSettingsCache(s); } catch {}
+                  try { const params = new URLSearchParams({ from: historyFrom, to: historyTo }); const res = await fetch(apiUrl(`/admin/student/${encodeURIComponent(historyUser._id)}/history?${params}`)); const detail=await res.json(); setHistoryData(detail || { records: [], pings: [] }); } catch {}
                 }} style={styles.primaryBtn}><Text style={styles.primaryBtnText}>Apply</Text></TouchableOpacity>
               </View>
             </View>
@@ -1160,9 +1283,9 @@ export default function AdminDashboard() {
                       <TouchableOpacity onPress={async()=>{
                         try {
                           const qs = new URLSearchParams({ studentId: historyUser._id, date: r.date });
-                          await fetch(`${api}/admin/attendance/day?${qs}`, { method:'DELETE' });
+                          await fetch(apiUrl(`/admin/attendance/day?${qs}`), { method:'DELETE' });
                           // reload modal data
-                          try { const params = new URLSearchParams({ from: historyFrom, to: historyTo }); const res = await fetch(`${api}/admin/student/${encodeURIComponent(historyUser._id)}/history?${params}`); const detail=await res.json(); setHistoryData(detail || { records: [], pings: [] }); } catch {}
+                          try { const params = new URLSearchParams({ from: historyFrom, to: historyTo }); const res = await fetch(apiUrl(`/admin/student/${encodeURIComponent(historyUser._id)}/history?${params}`)); const detail=await res.json(); setHistoryData(detail || { records: [], pings: [] }); } catch {}
                           await loadAttendance();
                         } catch {}
                       }} style={[styles.secondaryBtn,{backgroundColor:'rgba(239,68,68,0.2)', paddingVertical:4,paddingHorizontal:8}]}>
@@ -1316,10 +1439,10 @@ export default function AdminDashboard() {
                         <View style={{ flex:0.8, alignItems:'flex-end' }}>
                           <TouchableOpacity onPress={async()=>{
                             try {
-                              await fetch(`${api}/admin/ping/${encodeURIComponent(p._id)}`, { method:'DELETE' });
+                              await fetch(apiUrl(`/admin/ping/${encodeURIComponent(p._id)}`), { method:'DELETE' });
                               // reload modal data
-                              try { const s2 = await fetch(`${api}/admin/settings`).then(r=>r.json()); setSettingsCache(s2); } catch {}
-                              try { const params = new URLSearchParams({ from: historyFrom, to: historyTo }); const res = await fetch(`${api}/admin/student/${encodeURIComponent(historyUser._id)}/history?${params}`); const detail=await res.json(); setHistoryData(detail || { records: [], pings: [] }); } catch {}
+                              try { const s2 = await fetch(apiUrl('/admin/settings')).then(r=>r.json()); setSettingsCache(s2); } catch {}
+                              try { const params = new URLSearchParams({ from: historyFrom, to: historyTo }); const res = await fetch(apiUrl(`/admin/student/${encodeURIComponent(historyUser._id)}/history?${params}`)); const detail=await res.json(); setHistoryData(detail || { records: [], pings: [] }); } catch {}
                               await loadAttendance();
                               await loadPings();
                             } catch {}
