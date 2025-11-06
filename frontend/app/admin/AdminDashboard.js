@@ -5,7 +5,7 @@ import { Alert, ScrollView, StyleSheet, Text, View, TouchableOpacity, Platform, 
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { Image } from 'expo-image';
-import MapView from '../../components/maps/MapView';
+import MapView, { Marker } from '../../components/maps/MapView';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import { apiUrl } from '../../utils/api';
@@ -44,6 +44,7 @@ export default function AdminDashboard() {
   const [settingsCache, setSettingsCache] = useState(null);
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [mapRegion, setMapRegion] = useState(null);
+  const [mapWebZoom, setMapWebZoom] = useState(9);
 
   useEffect(() => {
     (async () => {
@@ -425,43 +426,91 @@ export default function AdminDashboard() {
                 <View style={styles.metricChip}><Text style={styles.metricNum}>{metrics.biometric}</Text><Text style={styles.metricLabel}>Biometric Pings</Text></View>
               </View>
               <View style={styles.mapWrap}>
-                {mapRegion && (
-                  <MapView
-                    style={{ width: '100%', height: '100%' }}
-                    region={mapRegion}
-                    onRegionChangeComplete={setMapRegion}
-                  >
-                    {(() => {
-                      const userLatestPing = {};
-                      (recentPings||[]).forEach(p => {
-                        if (p.location?.latitude && p.location?.longitude && p.studentId) {
-                          const userId = String(p.studentId);
-                          if (!userLatestPing[userId] || new Date(p.timestamp) > new Date(userLatestPing[userId].timestamp)) {
-                            userLatestPing[userId] = p;
-                          }
+                {Platform.OS === 'web' ? (
+                  (() => {
+                    const collegeLat = settings?.collegeLocation?.latitude || 12.823;
+                    const collegeLon = settings?.collegeLocation?.longitude || 80.043;
+                    // Build markers list for up to 25 online users' latest pings
+                    const onlineIds = new Set((users||[]).filter(u=>u.loggedIn).map(u=>String(u._id)));
+                    const latestByUser = {};
+                    (recentPings||[]).forEach(p => {
+                      if (p.location?.latitude && p.location?.longitude && p.studentId) {
+                        const uid = String(p.studentId);
+                        if (!onlineIds.has(uid)) return;
+                        if (!latestByUser[uid] || new Date(p.timestamp) > new Date(latestByUser[uid].timestamp)) {
+                          latestByUser[uid] = p;
                         }
-                      });
-                      return Object.values(userLatestPing).map((p, idx) => (
-                        <View key={p._id || p.studentId || idx} style={{ position:'absolute' }} />
-                      ));
-                    })()}
-                  </MapView>
+                      }
+                    });
+                    const pins = Object.values(latestByUser).slice(0,25);
+                    const markerParams = [
+                      `${collegeLat},${collegeLon},red`,
+                      ...pins.map(p=>`${p.location.latitude},${p.location.longitude},blue`)
+                    ].map(s=>encodeURIComponent(s)).join('&markers=');
+                    const staticUrl = `https://staticmap.openstreetmap.de/staticmap.php?center=${collegeLat},${collegeLon}&zoom=${Math.max(6, Math.min(12, mapWebZoom))}&size=1000x400&maptype=mapnik&markers=${markerParams}`;
+                    return (
+                      <>
+                        <Image source={{ uri: staticUrl }} contentFit="cover" style={{ width:'100%', height:'100%' }} />
+                        <View style={{ position:'absolute', right: 10, bottom: 10, gap: 8 }}>
+                          <TouchableOpacity onPress={() => setMapWebZoom(z=>Math.min(12, Math.round((z+1))))} style={{ backgroundColor:'#0a0a0aff', paddingVertical:8, paddingHorizontal:12, borderRadius:8 }}>
+                            <Text style={{ color:'#fff', fontWeight:'800' }}>+</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={() => setMapWebZoom(z=>Math.max(6, Math.round((z-1))))} style={{ backgroundColor:'#0a0a0aff', paddingVertical:8, paddingHorizontal:12, borderRadius:8 }}>
+                            <Text style={{ color:'#fff', fontWeight:'800' }}>-</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </>
+                    );
+                  })()
+                ) : (
+                  mapRegion && (
+                    <>
+                      <MapView
+                        style={{ width: '100%', height: '100%' }}
+                        region={mapRegion}
+                        onRegionChangeComplete={setMapRegion}
+                      >
+                        {(() => {
+                          const onlineIds = new Set((users||[]).filter(u=>u.loggedIn).map(u=>String(u._id)));
+                          const latestByUser = {};
+                          (recentPings||[]).forEach(p => {
+                            if (p.location?.latitude && p.location?.longitude && p.studentId) {
+                              const uid = String(p.studentId);
+                              if (!onlineIds.has(uid)) return; // only active users
+                              if (!latestByUser[uid] || new Date(p.timestamp) > new Date(latestByUser[uid].timestamp)) {
+                                latestByUser[uid] = p;
+                              }
+                            }
+                          });
+                          return Object.values(latestByUser).map((p, idx) => (
+                            <Marker
+                              key={p._id || p.studentId || idx}
+                              coordinate={{ latitude: p.location.latitude, longitude: p.location.longitude }}
+                              title={p.studentName || String(p.studentId)}
+                              description={new Date(p.timestamp).toLocaleTimeString()}
+                              onPress={() => setSelectedUserId(String(p.studentId))}
+                            />
+                          ));
+                        })()}
+                      </MapView>
+                      {/* Zoom controls */}
+                      <View style={{ position:'absolute', right: 10, bottom: 10, gap: 8 }}>
+                        <TouchableOpacity
+                          onPress={() => setMapRegion(r => r ? ({ ...r, latitudeDelta: r.latitudeDelta * 0.6, longitudeDelta: r.longitudeDelta * 0.6 }) : r)}
+                          style={{ backgroundColor:'#0a0a0aff', paddingVertical:8, paddingHorizontal:12, borderRadius:8 }}
+                        >
+                          <Text style={{ color:'#fff', fontWeight:'800' }}>+</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => setMapRegion(r => r ? ({ ...r, latitudeDelta: r.latitudeDelta / 0.6, longitudeDelta: r.longitudeDelta / 0.6 }) : r)}
+                          style={{ backgroundColor:'#0a0a0aff', paddingVertical:8, paddingHorizontal:12, borderRadius:8 }}
+                        >
+                          <Text style={{ color:'#fff', fontWeight:'800' }}>-</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  )
                 )}
-                {/* Zoom controls */}
-                <View style={{ position:'absolute', right: 10, bottom: 10, gap: 8 }}>
-                  <TouchableOpacity
-                    onPress={() => setMapRegion(r => r ? ({ ...r, latitudeDelta: r.latitudeDelta * 0.6, longitudeDelta: r.longitudeDelta * 0.6 }) : r)}
-                    style={{ backgroundColor:'#0a0a0aff', paddingVertical:8, paddingHorizontal:12, borderRadius:8 }}
-                  >
-                    <Text style={{ color:'#fff', fontWeight:'800' }}>+</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => setMapRegion(r => r ? ({ ...r, latitudeDelta: r.latitudeDelta / 0.6, longitudeDelta: r.longitudeDelta / 0.6 }) : r)}
-                    style={{ backgroundColor:'#0a0a0aff', paddingVertical:8, paddingHorizontal:12, borderRadius:8 }}
-                  >
-                    <Text style={{ color:'#fff', fontWeight:'800' }}>-</Text>
-                  </TouchableOpacity>
-                </View>
               </View>
               <View style={styles.legendRow}>
                 <View style={[styles.legendDot,{backgroundColor:'#ef4444'}]} />
