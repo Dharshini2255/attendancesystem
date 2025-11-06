@@ -1586,7 +1586,7 @@ const styles = StyleSheet.create({
  card: {
   borderRadius: 16,
   padding: 16,
-  backgroundColor: 'rgba(104, 100, 100, 0.75)',
+  backgroundColor: 'rgba(107, 112, 116, 0.75)',
   ...Platform.select({
     web: {
       backgroundColor: 'rgba(104, 100, 100, 0.75)', // ✅ same background for web
