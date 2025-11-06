@@ -5,6 +5,7 @@ import { Alert, ScrollView, StyleSheet, Text, View, TouchableOpacity, Platform, 
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { Image } from 'expo-image';
+import MapView from '../../components/maps/MapView';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import { apiUrl } from '../../utils/api';
@@ -42,6 +43,7 @@ export default function AdminDashboard() {
   const [historyGran, setHistoryGran] = useState('date'); // date | month | year
   const [settingsCache, setSettingsCache] = useState(null);
   const [selectedUserId, setSelectedUserId] = useState(null);
+  const [mapRegion, setMapRegion] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -59,6 +61,18 @@ export default function AdminDashboard() {
       }
     })();
   }, []);
+
+  // Initialize/refresh map region from settings
+  useEffect(() => {
+    const collegeLat = settings?.collegeLocation?.latitude || 12.8005328;
+    const collegeLon = settings?.collegeLocation?.longitude || 80.0388091;
+    setMapRegion(prev => ({
+      latitude: collegeLat,
+      longitude: collegeLon,
+      latitudeDelta: prev?.latitudeDelta || 0.02,
+      longitudeDelta: prev?.longitudeDelta || 0.02,
+    }));
+  }, [settings?.collegeLocation?.latitude, settings?.collegeLocation?.longitude]);
 
   // Auto-refresh pings and attendance when on dashboard tab
   useEffect(() => {
@@ -411,92 +425,43 @@ export default function AdminDashboard() {
                 <View style={styles.metricChip}><Text style={styles.metricNum}>{metrics.biometric}</Text><Text style={styles.metricLabel}>Biometric Pings</Text></View>
               </View>
               <View style={styles.mapWrap}>
-                {(() => {
-                  // Get college location from settings or use default
-                  const collegeLat = settings?.collegeLocation?.latitude || 12.8005328;
-                  const collegeLon = settings?.collegeLocation?.longitude || 80.0388091;
-                  
-                  // Calculate bounding box for zoomed-in view (about 5km radius for better detail)
-                  const zoomRadius = 0.05; // degrees (~5.5km)
-                  const minLat = collegeLat - zoomRadius;
-                  const maxLat = collegeLat + zoomRadius;
-                  const minLon = collegeLon - zoomRadius;
-                  const maxLon = collegeLon + zoomRadius;
-                  
-                  // Use OpenStreetMap static map image (works on both web and mobile)
-                  // Calculate appropriate size based on container
-                  const mapWidth = 800;
-                  const mapHeight = 400;
-                  // Use zoom level 15 for good detail around college (~500m radius visible)
-                  const staticMapUrl = `https://staticmap.openstreetmap.de/staticmap.php?center=${collegeLat},${collegeLon}&zoom=15&size=${mapWidth}x${mapHeight}&maptype=mapnik&markers=${collegeLat},${collegeLon},red-pushpin`;
-                  
-                  return (
-                    <>
-                      <Image 
-                        source={{ uri: staticMapUrl }}
-                        contentFit="cover"
-                        style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, zIndex: 0 }}
-                      />
-                      {/* Show user locations on map */}
-                      {(() => {
-                        const locationMarkers = [];
-                        // Get latest ping location for each user
-                        const userLatestPing = {};
-                        (recentPings||[]).forEach(p => {
-                          if (p.location?.latitude && p.location?.longitude && p.studentId) {
-                            const userId = String(p.studentId);
-                            if (!userLatestPing[userId] || new Date(p.timestamp) > new Date(userLatestPing[userId].timestamp)) {
-                              userLatestPing[userId] = p;
-                            }
+                {mapRegion && (
+                  <MapView
+                    style={{ width: '100%', height: '100%' }}
+                    region={mapRegion}
+                    onRegionChangeComplete={setMapRegion}
+                  >
+                    {(() => {
+                      const userLatestPing = {};
+                      (recentPings||[]).forEach(p => {
+                        if (p.location?.latitude && p.location?.longitude && p.studentId) {
+                          const userId = String(p.studentId);
+                          if (!userLatestPing[userId] || new Date(p.timestamp) > new Date(userLatestPing[userId].timestamp)) {
+                            userLatestPing[userId] = p;
                           }
-                        });
-                        // Add markers for each user's location (adjusted for zoomed-in view)
-                        Object.values(userLatestPing).forEach(p => {
-                          if (p.location?.latitude && p.location?.longitude) {
-                            const lon = p.location.longitude;
-                            const lat = p.location.latitude;
-                            
-                            // Convert to map coordinates for zoomed-in view
-                            // Map coordinates relative to bounding box
-                            const x = ((lon - minLon) / (maxLon - minLon)) * 100;
-                            const y = ((maxLat - lat) / (maxLat - minLat)) * 100;
-                            
-                            const isSelected = selectedUserId && String(p.studentId) === selectedUserId;
-                            const markerSize = isSelected ? 16 : 10;
-                            const halfSize = markerSize / 2;
-                            
-                            // Clamp coordinates to ensure markers stay within map bounds
-                            const clampedX = Math.max(0, Math.min(100, x));
-                            const clampedY = Math.max(0, Math.min(100, y));
-                            
-                            locationMarkers.push(
-                              <View key={p._id || p.studentId} style={{
-                                position: 'absolute',
-                                left: `${clampedX}%`,
-                                top: `${clampedY}%`,
-                                width: markerSize,
-                                height: markerSize,
-                                borderRadius: halfSize,
-                                backgroundColor: isSelected ? '#ef4444' : '#60a5fa',
-                                borderWidth: isSelected ? 3 : 2,
-                                borderColor: '#fff',
-                                zIndex: isSelected ? 20 : 10,
-                                marginLeft: -halfSize,
-                                marginTop: -halfSize,
-                                shadowColor: '#000',
-                                shadowOffset: { width: 0, height: 2 },
-                                shadowOpacity: 0.3,
-                                shadowRadius: 2,
-                                elevation: isSelected ? 10 : 5
-                              }} />
-                            );
-                          }
-                        });
-                        return locationMarkers.length > 0 ? locationMarkers : null;
-                      })()}
-                    </>
-                  );
-                })()}
+                        }
+                      });
+                      return Object.values(userLatestPing).map((p, idx) => (
+                        <View key={p._id || p.studentId || idx} style={{ position:'absolute' }} />
+                      ));
+                    })()}
+                  </MapView>
+                )}
+                {/* Zoom controls */}
+                <View style={{ position:'absolute', right: 10, bottom: 10, gap: 8 }}>
+                  <TouchableOpacity
+                    onPress={() => setMapRegion(r => r ? ({ ...r, latitudeDelta: r.latitudeDelta * 0.6, longitudeDelta: r.longitudeDelta * 0.6 }) : r)}
+                    style={{ backgroundColor:'#0a0a0aff', paddingVertical:8, paddingHorizontal:12, borderRadius:8 }}
+                  >
+                    <Text style={{ color:'#fff', fontWeight:'800' }}>+</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => setMapRegion(r => r ? ({ ...r, latitudeDelta: r.latitudeDelta / 0.6, longitudeDelta: r.longitudeDelta / 0.6 }) : r)}
+                    style={{ backgroundColor:'#0a0a0aff', paddingVertical:8, paddingHorizontal:12, borderRadius:8 }}
+                  >
+                    <Text style={{ color:'#fff', fontWeight:'800' }}>-</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
               <View style={styles.legendRow}>
                 <View style={[styles.legendDot,{backgroundColor:'#ef4444'}]} />
