@@ -1,26 +1,21 @@
-const chalk = require('chalk');
-const { readFile, writeFile, copyFile, mkdir } = require('fs').promises;
-const { existsSync } = require('fs');
+const fs = require('fs');
+const path = require('path');
 
-console.log(chalk.green('here'));
-function log(...args) {  console.log(chalk.yellow('[react-native-maps]'), ...args);}
-async function reactNativeMaps() {
-  log('📦 Creating web compatibility of react-native-maps using an empty module loaded on web builds');
-  const modulePath = 'node_modules/react-native-maps';
-  const libPath = `${modulePath}/lib`;
+const libPath = path.resolve(__dirname, 'node_modules/react-native-maps/lib');
+const webPath = path.resolve(libPath, 'index.js');
+const packagePath = path.resolve(__dirname, 'node_modules/react-native-maps/package.json');
 
-  if (!existsSync(libPath)) {
-    await mkdir(libPath, { recursive: true });
-  }
-
-  await writeFile(`${libPath}/index.web.js`, 'module.exports = {}', 'utf-8');
-  if (existsSync(`${modulePath}/index.d.ts`)) {
-    await copyFile(`${modulePath}/index.d.ts`, `${libPath}/index.web.d.ts`);
-  }
-  const pkg = JSON.parse(await readFile(`${modulePath}/package.json`));
-  pkg['react-native'] = 'lib/index.js';
-  pkg['main'] = 'lib/index.web.js';
-  await writeFile(`${modulePath}/package.json`, JSON.stringify(pkg, null, 2), 'utf-8');
-  log('✅ script ran successfully');
+// Create the lib directory if it doesn't exist
+if (!fs.existsSync(libPath)) {
+  fs.mkdirSync(libPath, { recursive: true });
 }
-reactNativeMaps();
+
+// Create an empty index.js file
+fs.writeFileSync(webPath, 'module.exports = {};');
+
+// Update package.json
+const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+packageJson.main = 'lib/index.js';
+fs.writeFileSync(packagePath, JSON.stringify(packageJson, null, 2));
+
+console.log('react-native-maps web fix applied.');

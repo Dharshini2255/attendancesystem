@@ -1523,7 +1523,7 @@ const styles = StyleSheet.create({
   secondaryBtnText: { color: '#000000ff', fontWeight: '700' },
   link: { color: '#000000ff', fontWeight: '700', textDecorationLine: 'underline' },
 
-  mapWrap: { height: 200, borderRadius: 12, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.6)', position: 'relative' },
+  mapWrap: { height: 400, borderRadius: 12, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,1)', position: 'relative' },
   legendRow: { flexDirection:'row', alignItems:'center', gap:8, marginTop: 8, flexWrap:'wrap' },
   legendDot: { width: 10, height: 10, borderRadius: 5 },
   legendText: { color: '#334155' },
