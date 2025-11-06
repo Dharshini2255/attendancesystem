@@ -411,51 +411,91 @@ export default function AdminDashboard() {
                 <View style={styles.metricChip}><Text style={styles.metricNum}>{metrics.biometric}</Text><Text style={styles.metricLabel}>Biometric Pings</Text></View>
               </View>
               <View style={styles.mapWrap}>
-                <Image source={{ uri: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/80/World_map_-_low_resolution.svg/1024px-World_map_-_low_resolution.svg.png' }} contentFit="contain" style={{ width: '100%', height: '100%' }} />
-                {/* Show user locations on map */}
                 {(() => {
-                  const locationMarkers = [];
-                  // Get latest ping location for each user
-                  const userLatestPing = {};
-                  (recentPings||[]).forEach(p => {
-                    if (p.location?.latitude && p.location?.longitude && p.studentId) {
-                      const userId = String(p.studentId);
-                      if (!userLatestPing[userId] || new Date(p.timestamp) > new Date(userLatestPing[userId].timestamp)) {
-                        userLatestPing[userId] = p;
-                      }
-                    }
-                  });
-                  // Add markers for each user's location
-                  Object.values(userLatestPing).forEach(p => {
-                    if (p.location?.latitude && p.location?.longitude) {
-                      // Convert lat/lon to map coordinates (simple projection)
-                      const lon = p.location.longitude;
-                      const lat = p.location.latitude;
-                      const x = ((lon + 180) / 360) * 100;
-                      const y = ((90 - lat) / 180) * 100;
-                      const isSelected = selectedUserId && String(p.studentId) === selectedUserId;
-                      locationMarkers.push(
-                        <View key={p._id || p.studentId} style={{
-                          position: 'absolute',
-                          left: `${x}%`,
-                          top: `${y}%`,
-                          width: isSelected ? 16 : 10,
-                          height: isSelected ? 16 : 10,
-                          borderRadius: isSelected ? 8 : 5,
-                          backgroundColor: isSelected ? '#ef4444' : '#60a5fa',
-                          borderWidth: isSelected ? 3 : 2,
-                          borderColor: '#fff',
-                          zIndex: isSelected ? 20 : 10,
-                          shadowColor: '#000',
-                          shadowOffset: { width: 0, height: 2 },
-                          shadowOpacity: 0.3,
-                          shadowRadius: 2,
-                          elevation: isSelected ? 10 : 5
-                        }} />
-                      );
-                    }
-                  });
-                  return locationMarkers.length > 0 ? locationMarkers : null;
+                  // Get college location from settings or use default
+                  const collegeLat = settings?.collegeLocation?.latitude || 12.8005328;
+                  const collegeLon = settings?.collegeLocation?.longitude || 80.0388091;
+                  
+                  // Calculate bounding box for zoomed-in view (about 5km radius for better detail)
+                  const zoomRadius = 0.05; // degrees (~5.5km)
+                  const minLat = collegeLat - zoomRadius;
+                  const maxLat = collegeLat + zoomRadius;
+                  const minLon = collegeLon - zoomRadius;
+                  const maxLon = collegeLon + zoomRadius;
+                  
+                  // Use OpenStreetMap static map image (works on both web and mobile)
+                  // Calculate appropriate size based on container
+                  const mapWidth = 800;
+                  const mapHeight = 400;
+                  // Use zoom level 15 for good detail around college (~500m radius visible)
+                  const staticMapUrl = `https://staticmap.openstreetmap.de/staticmap.php?center=${collegeLat},${collegeLon}&zoom=15&size=${mapWidth}x${mapHeight}&maptype=mapnik&markers=${collegeLat},${collegeLon},red-pushpin`;
+                  
+                  return (
+                    <>
+                      <Image 
+                        source={{ uri: staticMapUrl }}
+                        contentFit="cover"
+                        style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, zIndex: 0 }}
+                      />
+                      {/* Show user locations on map */}
+                      {(() => {
+                        const locationMarkers = [];
+                        // Get latest ping location for each user
+                        const userLatestPing = {};
+                        (recentPings||[]).forEach(p => {
+                          if (p.location?.latitude && p.location?.longitude && p.studentId) {
+                            const userId = String(p.studentId);
+                            if (!userLatestPing[userId] || new Date(p.timestamp) > new Date(userLatestPing[userId].timestamp)) {
+                              userLatestPing[userId] = p;
+                            }
+                          }
+                        });
+                        // Add markers for each user's location (adjusted for zoomed-in view)
+                        Object.values(userLatestPing).forEach(p => {
+                          if (p.location?.latitude && p.location?.longitude) {
+                            const lon = p.location.longitude;
+                            const lat = p.location.latitude;
+                            
+                            // Convert to map coordinates for zoomed-in view
+                            // Map coordinates relative to bounding box
+                            const x = ((lon - minLon) / (maxLon - minLon)) * 100;
+                            const y = ((maxLat - lat) / (maxLat - minLat)) * 100;
+                            
+                            const isSelected = selectedUserId && String(p.studentId) === selectedUserId;
+                            const markerSize = isSelected ? 16 : 10;
+                            const halfSize = markerSize / 2;
+                            
+                            // Clamp coordinates to ensure markers stay within map bounds
+                            const clampedX = Math.max(0, Math.min(100, x));
+                            const clampedY = Math.max(0, Math.min(100, y));
+                            
+                            locationMarkers.push(
+                              <View key={p._id || p.studentId} style={{
+                                position: 'absolute',
+                                left: `${clampedX}%`,
+                                top: `${clampedY}%`,
+                                width: markerSize,
+                                height: markerSize,
+                                borderRadius: halfSize,
+                                backgroundColor: isSelected ? '#ef4444' : '#60a5fa',
+                                borderWidth: isSelected ? 3 : 2,
+                                borderColor: '#fff',
+                                zIndex: isSelected ? 20 : 10,
+                                marginLeft: -halfSize,
+                                marginTop: -halfSize,
+                                shadowColor: '#000',
+                                shadowOffset: { width: 0, height: 2 },
+                                shadowOpacity: 0.3,
+                                shadowRadius: 2,
+                                elevation: isSelected ? 10 : 5
+                              }} />
+                            );
+                          }
+                        });
+                        return locationMarkers.length > 0 ? locationMarkers : null;
+                      })()}
+                    </>
+                  );
                 })()}
               </View>
               <View style={styles.legendRow}>
