@@ -1,7 +1,7 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Alert, ScrollView, StyleSheet, Text, View, TouchableOpacity, Platform, TextInput, Switch, useWindowDimensions } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, View, TouchableOpacity, Platform, TextInput, Switch, useWindowDimensions, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { Image } from 'expo-image';
@@ -39,6 +39,7 @@ export default function AdminDashboard() {
   const [historyData, setHistoryData] = useState({ records: [], pings: [] });
   const [historyGran, setHistoryGran] = useState('date'); // date | month | year
   const [settingsCache, setSettingsCache] = useState(null);
+  const [selectedUserId, setSelectedUserId] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -304,31 +305,86 @@ export default function AdminDashboard() {
               <Text style={styles.panelTitle}>Real-time Attendance Overview</Text>
               <View style={styles.metricsRow}>
                 <View style={styles.metricChip}><Text style={styles.metricNum}>{metrics.activeStudents}</Text><Text style={styles.metricLabel}>Online Students</Text></View>
-                <View style={styles.metricChip}><Text style={styles.metricNum}>{metrics.activeClasses}</Text><Text style={styles.metricLabel}>Active Classes</Text></View>
                 <View style={styles.metricChip}><Text style={styles.metricNum}>{metrics.biometric}</Text><Text style={styles.metricLabel}>Biometric Pings</Text></View>
               </View>
               <View style={styles.mapWrap}>
                 <Image source={{ uri: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/80/World_map_-_low_resolution.svg/1024px-World_map_-_low_resolution.svg.png' }} contentFit="contain" style={{ width: '100%', height: '100%' }} />
+                {/* Show user locations on map */}
+                {(() => {
+                  const locationMarkers = [];
+                  // Get latest ping location for each user
+                  const userLatestPing = {};
+                  (recentPings||[]).forEach(p => {
+                    if (p.location?.latitude && p.location?.longitude && p.studentId) {
+                      const userId = String(p.studentId);
+                      if (!userLatestPing[userId] || new Date(p.timestamp) > new Date(userLatestPing[userId].timestamp)) {
+                        userLatestPing[userId] = p;
+                      }
+                    }
+                  });
+                  // Add markers for each user's location
+                  Object.values(userLatestPing).forEach(p => {
+                    if (p.location?.latitude && p.location?.longitude) {
+                      // Convert lat/lon to map coordinates (simple projection)
+                      const lon = p.location.longitude;
+                      const lat = p.location.latitude;
+                      const x = ((lon + 180) / 360) * 100;
+                      const y = ((90 - lat) / 180) * 100;
+                      const isSelected = selectedUserId && String(p.studentId) === selectedUserId;
+                      locationMarkers.push(
+                        <View key={p._id || p.studentId} style={{
+                          position: 'absolute',
+                          left: `${x}%`,
+                          top: `${y}%`,
+                          width: isSelected ? 16 : 10,
+                          height: isSelected ? 16 : 10,
+                          borderRadius: isSelected ? 8 : 5,
+                          backgroundColor: isSelected ? '#ef4444' : '#60a5fa',
+                          borderWidth: isSelected ? 3 : 2,
+                          borderColor: '#fff',
+                          zIndex: isSelected ? 20 : 10,
+                          shadowColor: '#000',
+                          shadowOffset: { width: 0, height: 2 },
+                          shadowOpacity: 0.3,
+                          shadowRadius: 2,
+                          elevation: isSelected ? 10 : 5
+                        }} />
+                      );
+                    }
+                  });
+                  return locationMarkers.length > 0 ? locationMarkers : null;
+                })()}
               </View>
               <View style={styles.legendRow}>
-                <View style={[styles.legendDot,{backgroundColor:'#60a5fa'}]} />
+                <View style={[styles.legendDot,{backgroundColor:'#ef4444'}]} />
                 <Text style={styles.legendText}>Current User Locations</Text>
               </View>
               {(() => {
-                // Show online users' locations
+                // Show online users' locations with clickable icons
                 const onlineUsers = users.filter(u => u.loggedIn);
-                if (onlineUsers.length === 0) return <Text style={styles.muted}>No users online</Text>;
+                if (onlineUsers.length === 0) return null;
                 return (
                   <View style={{ marginTop: 8 }}>
                     {onlineUsers.slice(0, 5).map(u => {
-                      const loc = userLocations[String(u._id)] || u.location;
+                      // Get latest location from pings
+                      const latestPing = (recentPings||[]).filter(p => String(p.studentId) === String(u._id))
+                        .sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
+                      const loc = latestPing?.location || u.location;
                       if (!loc || (!loc.latitude && !loc.lat)) return null;
                       const lat = loc.latitude || loc.lat;
                       const lon = loc.longitude || loc.lon;
                       return (
-                        <Text key={u._id} style={[styles.muted, { fontSize: 12, marginBottom: 2 }]}>
-                          {u.name}: {lat.toFixed(6)}, {lon.toFixed(6)}
-                        </Text>
+                        <View key={u._id} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                          <Text style={[styles.muted, { fontSize: 12, flex: 1 }]}>
+                            {u.name}
+                          </Text>
+                          <TouchableOpacity 
+                            onPress={() => setSelectedUserId(String(u._id))}
+                            style={{ marginLeft: 8, padding: 4 }}
+                          >
+                            <Ionicons name="location" size={16} color={selectedUserId === String(u._id) ? '#ef4444' : '#60a5fa'} />
+                          </TouchableOpacity>
+                        </View>
                       );
                     })}
                   </View>
@@ -362,24 +418,50 @@ export default function AdminDashboard() {
                   <Text style={[styles.th,{flex:1}]}>Tracking</Text>
                 </View>
                 {users.slice(0,12).map((u,i)=> {
-                  const loc = userLocations[String(u._id)] || u.location;
+                  // Get latest ping location for this user
+                  const userPings = (pings||[]).filter(p => String(p.studentId) === String(u._id));
+                  const latestPing = userPings.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
+                  
                   let locationText = '—';
-                  if (loc) {
-                    const lat = loc.latitude || loc.lat;
-                    const lon = loc.longitude || loc.lon;
-                    if (lat && lon) {
-                      locationText = u.loggedIn 
-                        ? `Current: ${lat.toFixed(4)}, ${lon.toFixed(4)}`
-                        : `Last: ${lat.toFixed(4)}, ${lon.toFixed(4)}`;
-                    }
+                  let lat = null;
+                  let lon = null;
+                  if (latestPing?.location?.latitude && latestPing?.location?.longitude) {
+                    lat = latestPing.location.latitude;
+                    lon = latestPing.location.longitude;
+                  } else if (u.location?.latitude && u.location?.longitude) {
+                    // Fallback to user's stored location
+                    lat = u.location.latitude;
+                    lon = u.location.longitude;
                   }
+                  
+                  if (lat && lon) {
+                    locationText = u.loggedIn 
+                      ? `Current: ${lat.toFixed(4)}, ${lon.toFixed(4)}`
+                      : `Last: ${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+                  }
+                  
+                  const openGoogleMaps = () => {
+                    if (lat && lon) {
+                      const url = Platform.OS === 'ios' 
+                        ? `maps://maps.apple.com/?q=${lat},${lon}`
+                        : `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
+                      Linking.openURL(url).catch(err => console.error('Failed to open maps:', err));
+                    }
+                  };
+                  
                   return (
                     <View key={u._id||i} style={styles.tableRow}>
                       <Text style={[styles.td,{flex:2}]}>{u.name}</Text>
                       <Text style={[styles.td,{flex:1.2}]}>{u.regNo}</Text>
                       <Text style={[styles.td,{flex:1}]}>{u.loggedIn? 'Online' : 'Offline'}</Text>
                       <Text style={[styles.td,{flex:1}]}>{u.biometricEnrolled? '✓' : '—'}</Text>
-                      <Text style={[styles.td,{flex:1, fontSize: 11 }]}>{locationText}</Text>
+                      {lat && lon ? (
+                        <TouchableOpacity onPress={openGoogleMaps} style={{ flex: 1 }}>
+                          <Text style={[styles.td,{ fontSize: 11, color: '#2563eb', textDecorationLine: 'underline' }]}>{locationText}</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <Text style={[styles.td,{flex:1, fontSize: 11 }]}>{locationText}</Text>
+                      )}
                     </View>
                   );
                 })}
@@ -1225,7 +1307,7 @@ const styles = StyleSheet.create({
   secondaryBtnText: { color: '#000000ff', fontWeight: '700' },
   link: { color: '#000000ff', fontWeight: '700', textDecorationLine: 'underline' },
 
-  mapWrap: { height: 200, borderRadius: 12, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.6)' },
+  mapWrap: { height: 200, borderRadius: 12, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.6)', position: 'relative' },
   legendRow: { flexDirection:'row', alignItems:'center', gap:8, marginTop: 8, flexWrap:'wrap' },
   legendDot: { width: 10, height: 10, borderRadius: 5 },
   legendText: { color: '#334155' },

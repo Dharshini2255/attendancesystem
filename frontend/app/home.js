@@ -582,6 +582,8 @@ useEffect(() => {
             </View>
           )}
         </ScrollView>
+        {/* Overlay below text */}
+        <View style={styles.bottomOverlay} />
       </View>
 
       {/* Drawer Menu */}
@@ -658,6 +660,15 @@ const styles = StyleSheet.create({
     zIndex: 1
   },
   scroll: { padding: 20, flex: 1 },
+  bottomOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 100,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    zIndex: 0
+  },
   drawerOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)'
