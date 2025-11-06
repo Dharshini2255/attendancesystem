@@ -49,13 +49,7 @@ const attendanceSchema = new mongoose.Schema({
       status: { type: String, enum: ['present', 'absent'] }
     }
   ]
-}, { 
-  // Add unique constraint to prevent duplicate records
-  timestamps: true 
 });
-
-// Create compound index to prevent duplicate attendance records
-attendanceSchema.index({ studentId: 1, date: 1 }, { unique: true });
 const Attendance = mongoose.model("Attendance", attendanceSchema);
 
 const pingSchema = new mongoose.Schema({
@@ -344,16 +338,10 @@ app.post('/attendance/mark', async (req, res) => {
         });
       }
 
-      // Check if period already exists and update if needed, or add if new
-      const existingPeriodIndex = attendance.periods.findIndex(p => p.periodNumber === periodNumber);
-      if (existingPeriodIndex === -1) {
-        // Period doesn't exist, add it
+      const existingPeriod = attendance.periods.find(p => p.periodNumber === periodNumber);
+      if (!existingPeriod) {
         attendance.periods.push({ periodNumber, status: 'present' });
-      } else if (attendance.periods[existingPeriodIndex].status !== 'present') {
-        // Period exists but status is absent, update to present
-        attendance.periods[existingPeriodIndex].status = 'present';
       }
-      // If period already exists with present status, no need to update
 
       await attendance.save();
     }
@@ -377,18 +365,11 @@ app.get('/attendance/today/:studentId', async (req, res) => {
       return res.status(200).json({ periods: [], date: todayLocal, overall: 'absent' });
     }
 
-    // Deduplicate periods by periodNumber (keep the most recent/last one)
-    const periodMap = new Map();
-    (record.periods || []).forEach(p => {
-      const pnum = Number(p.periodNumber);
-      // Keep the most recent status (or present over absent)
-      if (!periodMap.has(pnum) || p.status === 'present') {
-        periodMap.set(pnum, { periodNumber: pnum, status: p.status });
-      }
-    });
-    const summary = Array.from(periodMap.values()).sort((a, b) => a.periodNumber - b.periodNumber);
-    
-    const presentCount = summary.filter(p=>p.status==='present').length;
+    const summary = record.periods.map(p => ({
+      periodNumber: p.periodNumber,
+      status: p.status
+    }));
+    const presentCount = (record.periods || []).filter(p=>p.status==='present').length;
     const overall = presentCount === 8 ? 'present' : (presentCount > 0 ? 'partial' : 'absent');
 
     res.status(200).json({

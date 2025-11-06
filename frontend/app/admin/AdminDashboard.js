@@ -8,8 +8,6 @@ import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import { apiUrl } from '../../utils/api';
-import MapView from '../../components/maps/MapView';
-import Marker from '../../components/maps/Marker';
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -26,7 +24,6 @@ export default function AdminDashboard() {
 
   const [from, setFrom] = useState(new Date().toLocaleDateString('en-CA'));
   const [to, setTo] = useState(new Date().toLocaleDateString('en-CA'));
-  const [pingsLoading, setPingsLoading] = useState(false);
   const [granularity, setGranularity] = useState('day');
   const [query, setQuery] = useState('');
   const [showFilters, setShowFilters] = useState(false);
@@ -51,7 +48,7 @@ export default function AdminDashboard() {
         const v = await AsyncStorage.getItem('adminAuth');
         if (v === 'true') {
           setAuthorized(true);
-          await Promise.all([loadUsers(), loadAttendance(), loadPings(false), loadNotifications(), loadSessions(), readControl()]);
+          await Promise.all([loadUsers(), loadAttendance(), loadPings(true), loadNotifications(), loadSessions(), readControl()]);
         } else {
           Alert.alert('Unauthorized', 'Admin access required');
           router.replace('/login');
@@ -66,8 +63,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (!authorized || tab !== 'dashboard') return;
     const interval = setInterval(() => {
-      loadPings(true); // Load today's pings for current locations (for map)
-      loadPings(false); // Load all pings for Recent Pings table
+      loadPings(true); // Load today's pings for current locations
       loadUsers();
       loadAttendance();
       loadNotifications();
@@ -175,11 +171,9 @@ export default function AdminDashboard() {
         setUserLocations(locations);
       }
       console.log('Loaded pings:', data?.length || 0, 'useToday:', useToday);
-      setPingsLoading(false);
     } catch (err) {
       console.error('Error loading pings:', err);
       if (!useToday) setPings([]);
-      setPingsLoading(false);
     }
   };
 
@@ -413,36 +407,51 @@ export default function AdminDashboard() {
                 <View style={styles.metricChip}><Text style={styles.metricNum}>{metrics.biometric}</Text><Text style={styles.metricLabel}>Biometric Pings</Text></View>
               </View>
               <View style={styles.mapWrap}>
+                <Image source={{ uri: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/80/World_map_-_low_resolution.svg/1024px-World_map_-_low_resolution.svg.png' }} contentFit="contain" style={{ width: '100%', height: '100%' }} />
+                {/* Show user locations on map */}
                 {(() => {
-                  // Get college location from settings or use default
-                  const collegeLat = settings?.collegeLocation?.latitude || 12.8005328;
-                  const collegeLon = settings?.collegeLocation?.longitude || 80.0388091;
-                  
-                  return (
-                    <MapView
-                      style={{ flex: 1 }}
-                      initialRegion={{
-                        latitude: collegeLat,
-                        longitude: collegeLon,
-                        latitudeDelta: 0.0922,
-                        longitudeDelta: 0.0421,
-                      }}
-                      showsUserLocation
-                      showsMyLocationButton
-                    >
-                      {Object.entries(userLocations).map(([userId, loc]) => {
-                        const user = users.find(u => String(u._id) === userId);
-                        return (
-                          <Marker
-                            key={userId}
-                            coordinate={{ latitude: loc.lat, longitude: loc.lon }}
-                            title={user?.name || 'User'}
-                            description={`Last seen: ${new Date(loc.timestamp).toLocaleTimeString()}`}
-                          />
-                        );
-                      })}
-                    </MapView>
-                  );
+                  const locationMarkers = [];
+                  // Get latest ping location for each user
+                  const userLatestPing = {};
+                  (recentPings||[]).forEach(p => {
+                    if (p.location?.latitude && p.location?.longitude && p.studentId) {
+                      const userId = String(p.studentId);
+                      if (!userLatestPing[userId] || new Date(p.timestamp) > new Date(userLatestPing[userId].timestamp)) {
+                        userLatestPing[userId] = p;
+                      }
+                    }
+                  });
+                  // Add markers for each user's location
+                  Object.values(userLatestPing).forEach(p => {
+                    if (p.location?.latitude && p.location?.longitude) {
+                      // Convert lat/lon to map coordinates (simple projection)
+                      const lon = p.location.longitude;
+                      const lat = p.location.latitude;
+                      const x = ((lon + 180) / 360) * 100;
+                      const y = ((90 - lat) / 180) * 100;
+                      const isSelected = selectedUserId && String(p.studentId) === selectedUserId;
+                      locationMarkers.push(
+                        <View key={p._id || p.studentId} style={{
+                          position: 'absolute',
+                          left: `${x}%`,
+                          top: `${y}%`,
+                          width: isSelected ? 16 : 10,
+                          height: isSelected ? 16 : 10,
+                          borderRadius: isSelected ? 8 : 5,
+                          backgroundColor: isSelected ? '#ef4444' : '#60a5fa',
+                          borderWidth: isSelected ? 3 : 2,
+                          borderColor: '#fff',
+                          zIndex: isSelected ? 20 : 10,
+                          shadowColor: '#000',
+                          shadowOffset: { width: 0, height: 2 },
+                          shadowOpacity: 0.3,
+                          shadowRadius: 2,
+                          elevation: isSelected ? 10 : 5
+                        }} />
+                      );
+                    }
+                  });
+                  return locationMarkers.length > 0 ? locationMarkers : null;
                 })()}
               </View>
               <View style={styles.legendRow}>
@@ -569,7 +578,7 @@ export default function AdminDashboard() {
             <Panel style={styles.fullRow}>
               <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center'}}>
                 <Text style={styles.panelTitle}>Recent Pings</Text>
-                <TouchableOpacity onPress={() => loadPings(false)}><Text style={styles.link}>Refresh</Text></TouchableOpacity>
+                <TouchableOpacity onPress={loadPings}><Text style={styles.link}>Refresh</Text></TouchableOpacity>
               </View>
               <TableContainer>
                 <View style={styles.tableHeader}>
@@ -594,7 +603,7 @@ export default function AdminDashboard() {
                       <TouchableOpacity onPress={async()=>{
                         try {
                           await fetch(apiUrl(`/admin/ping/${encodeURIComponent(p._id)}`), { method: 'DELETE' });
-                          await loadPings(false);
+                          await loadPings();
                           await loadAttendance();
                         } catch {}
                       }} style={[styles.secondaryBtn,{backgroundColor:'rgba(239,68,68,0.2)', paddingVertical:4,paddingHorizontal:8}]}>
@@ -899,7 +908,7 @@ export default function AdminDashboard() {
                   <View style={styles.segmentRow}>
                     {[100,200].map(r => (
                       Platform.OS==='web' ? (
-                        <button key={r} onClick={()=>setSettings({ ...settings, proximityRadiusMeters: r })} style={{ padding: 8, borderRadius: 8, border: '1px solid #ccfbf1', backgroundColor: (settings.proximityRadiusMeters||100)===r ? '#99f6e4' : 'transparent' }}>{r} m</button>
+                        <button key={r} onClick={()=>setSettings({ ...settings, proximityRadiusMeters: r })} style={{ padding: 8, borderRadius: 8, border: '1px solid #ccfbf1', background: (settings.proximityRadiusMeters||100)===r ? '#99f6e4' : 'transparent' }}>{r} m</button>
                       ) : (
                         <TouchableOpacity key={r} onPress={()=>setSettings({ ...settings, proximityRadiusMeters: r })} style={[styles.segmentBtn, (settings.proximityRadiusMeters||100)===r && styles.segmentActive]}>
                           <Text style={styles.segmentLabel}>{r} m</Text>
@@ -1523,7 +1532,7 @@ const styles = StyleSheet.create({
   secondaryBtnText: { color: '#000000ff', fontWeight: '700' },
   link: { color: '#000000ff', fontWeight: '700', textDecorationLine: 'underline' },
 
-  mapWrap: { height: 400, borderRadius: 12, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,1)', position: 'relative' },
+  mapWrap: { height: 200, borderRadius: 12, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.6)', position: 'relative' },
   legendRow: { flexDirection:'row', alignItems:'center', gap:8, marginTop: 8, flexWrap:'wrap' },
   legendDot: { width: 10, height: 10, borderRadius: 5 },
   legendText: { color: '#334155' },
@@ -1550,7 +1559,7 @@ const styles = StyleSheet.create({
   segmentLabel: { color:'#0f172a', fontWeight:'700' },
 
   input: { padding: 10, backgroundColor:'rgba(255,255,255,0.8)', borderRadius: 10, color:'#0f172a' },
-  webInput: { padding: 10, backgroundColor: 'rgba(255, 255, 255, 1)', borderRadius: 10, border: '1px solid rgba(148,163,184,0.35)' },
+  webInput: { padding: 10, background: 'rgba(255, 255, 255, 1)', borderRadius: 10, border: '1px solid rgba(148,163,184,0.35)' },
 
   // Table styles
   table: { width:'100%', borderRadius: 12, overflow:'hidden', ...Platform.select({ web: { border: '1px solid rgba(148,163,184,0.35)' }, default: {} }) },

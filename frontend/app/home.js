@@ -94,7 +94,7 @@ useEffect(() => {
 useEffect(() => {
   if (!user) return;
   let timer = null;
-  const stateRef = { perCounts: {}, currentPeriod: 1, allPeriodsComplete: false };
+  const stateRef = { perCounts: {}, currentPeriod: 1 };
   const permRef = { granted: false };
   const sendingRef = { sending: false };
   let nextSettingsFetchAt = 0;
@@ -142,36 +142,6 @@ useEffect(() => {
   };
 
   const tick = async () => {
-    // Stop if all periods are complete
-    if (stateRef.allPeriodsComplete) {
-      if (timer) {
-        clearInterval(timer);
-        timer = null;
-      }
-      return;
-    }
-    
-    // Periodic check: Verify all periods are complete before starting
-    try {
-      const todayRes = await fetch(apiUrl(`/attendance/today/${user._id}`));
-      if (todayRes.ok) {
-        const todayData = await todayRes.json();
-        if (todayData) {
-          const presentPeriods = (todayData.periods || []).filter(p => p.status === 'present');
-          if (presentPeriods.length >= 8) {
-            stateRef.allPeriodsComplete = true;
-            if (timer) {
-              clearInterval(timer);
-              timer = null;
-            }
-            setStatus('All periods completed for today');
-            return;
-          }
-        }
-      }
-    } catch {}
-    
-    // Prevent concurrent executions
     if (sendingRef.sending) return;
     sendingRef.sending = true;
     try {
@@ -226,31 +196,8 @@ useEffect(() => {
         return;
       }
 
-      // Sync with backend: Check actual ping count from server to prevent duplicates
+      // Get current count for this period (before sending new ping)
       let currentCount = stateRef.perCounts[period] || 0;
-      try {
-        const todayLocal = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-        const startOfDay = new Date(`${todayLocal}T00:00:00+05:30`);
-        const endOfDay = new Date(`${todayLocal}T23:59:59+05:30`);
-        const pingCheckRes = await fetch(apiUrl(`/admin/pings?studentId=${encodeURIComponent(user._id)}&from=${todayLocal}&to=${todayLocal}`));
-        if (pingCheckRes.ok) {
-          const allPings = await pingCheckRes.json();
-          const periodPings = (allPings || []).filter(p => 
-            p.periodNumber === period && 
-            new Date(p.timestamp) >= startOfDay && 
-            new Date(p.timestamp) <= endOfDay
-          );
-          // Use backend count if it's higher (more accurate across devices)
-          const backendCount = periodPings.length;
-          if (backendCount > currentCount) {
-            currentCount = backendCount;
-            stateRef.perCounts[period] = backendCount;
-          }
-        }
-      } catch (syncErr) {
-        console.warn('Failed to sync ping count from backend:', syncErr);
-        // Continue with local count if sync fails
-      }
       
       // Check if current period has reached threshold - if so, move to next period
       if (currentCount >= threshold) {
@@ -258,35 +205,15 @@ useEffect(() => {
         stateRef.currentPeriod = Math.min(8, period + 1);
         period = stateRef.currentPeriod;
         
-        // If we've completed all periods, stop completely
+        // If we've completed all periods, stop
         if (period > 8) {
           sendingRef.sending = false;
-          stateRef.allPeriodsComplete = true;
           setStatus('All periods completed for today');
-          // Clear the timer to stop ping generation
-          if (timer) {
-            clearInterval(timer);
-            timer = null;
-          }
           return;
         }
-        // Sync count for new period from backend
-        try {
-          const todayLocal = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-          const pingCheckRes = await fetch(apiUrl(`/admin/pings?studentId=${encodeURIComponent(user._id)}&from=${todayLocal}&to=${todayLocal}`));
-          if (pingCheckRes.ok) {
-            const allPings = await pingCheckRes.json();
-            const periodPings = (allPings || []).filter(p => p.periodNumber === period);
-            currentCount = periodPings.length;
-            stateRef.perCounts[period] = currentCount;
-          } else {
-            stateRef.perCounts[period] = 0;
-            currentCount = 0;
-          }
-        } catch {
-          stateRef.perCounts[period] = 0;
-          currentCount = 0;
-        }
+        // Reset count for new period and continue to send first ping
+        stateRef.perCounts[period] = 0;
+        currentCount = 0; // Update currentCount for new period
       }
 
       // Determine biometric trigger (optional) - use current count
@@ -367,26 +294,11 @@ useEffect(() => {
       }
 
       // Double-check period count before sending (prevent race conditions)
-      // Also check if period is already marked as present in attendance
       if (currentCount >= threshold) {
         // Period already completed, skip this tick
         sendingRef.sending = false;
         return;
       }
-      
-      // Additional check: Verify period is not already marked as present
-      try {
-        const todayRes = await fetch(apiUrl(`/attendance/today/${user._id}`));
-        if (todayRes.ok) {
-          const todayData = await todayRes.json();
-          const periodRecord = (todayData.periods || []).find(p => Number(p.periodNumber) === period && p.status === 'present');
-          if (periodRecord) {
-            // Period already marked as present, skip
-            sendingRef.sending = false;
-            return;
-          }
-        }
-      } catch {}
       
       // Send ping
       try {
@@ -427,43 +339,22 @@ useEffect(() => {
         });
 
         if (response.ok) {
-          // Sync with backend after successful ping to get accurate count
-          let actualCount = currentCount + 1;
-          try {
-            const todayLocal = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-            const pingSyncRes = await fetch(apiUrl(`/admin/pings?studentId=${encodeURIComponent(user._id)}&from=${todayLocal}&to=${todayLocal}`));
-            if (pingSyncRes.ok) {
-              const allPings = await pingSyncRes.json();
-              const periodPings = (allPings || []).filter(p => p.periodNumber === period);
-              actualCount = periodPings.length;
-            }
-          } catch {}
-          
-          // Update state with actual count from backend
-          stateRef.perCounts[period] = actualCount;
+          // Increment count for this period AFTER successful ping
+          const newCount = currentCount + 1;
+          stateRef.perCounts[period] = newCount;
           
           // Only refresh attendance after completing threshold
-          if (actualCount >= threshold) {
+          if (newCount >= threshold) {
             await refreshAttendance(user._id);
             setStatus(`Period ${period} completed (${threshold}/${threshold} pings)`);
-            
-            // Check if all periods are complete and stop timer
-            if (period >= 8) {
-              stateRef.allPeriodsComplete = true;
-              if (timer) {
-                clearInterval(timer);
-                timer = null;
-              }
-              setStatus('All periods completed for today');
-            }
+            // The next tick will automatically advance to next period
           } else {
-            setStatus(`Ping ${actualCount}/${threshold} sent for period ${period} (${timestampType})`);
+            setStatus(`Ping ${newCount}/${threshold} sent for period ${period} (${timestampType})`);
           }
         } else {
           let msg = '';
           try { const errorData = await response.json(); msg = errorData?.error || ''; } catch {}
           setStatus(`Ping failed: ${msg || response.status}`);
-          // Don't increment count on failure - will retry on next interval
         }
       } catch (err) {
         setStatus('Ping error: network or permission issue');
@@ -481,7 +372,7 @@ useEffect(() => {
       // Load settings
       await getSettings();
       
-      // Check today's attendance to determine starting period and sync ping counts
+      // Check today's attendance to determine starting period
       try {
         const res = await fetch(apiUrl(`/attendance/today/${user._id}`));
         const data = await res.json();
@@ -492,45 +383,13 @@ useEffect(() => {
             maxP = Math.max(maxP, Number(p.periodNumber) || 0); 
           }
         }
-        
-        // Sync ping counts from backend for all periods
-        const todayLocal = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-        try {
-          const pingRes = await fetch(apiUrl(`/admin/pings?studentId=${encodeURIComponent(user._id)}&from=${todayLocal}&to=${todayLocal}`));
-          if (pingRes.ok) {
-            const allPings = await pingRes.json();
-            stateRef.perCounts = {};
-            for (let p = 1; p <= 8; p++) {
-              const periodPings = (allPings || []).filter(ping => ping.periodNumber === p);
-              stateRef.perCounts[p] = periodPings.length;
-            }
-          }
-        } catch (pingErr) {
-          console.warn('Failed to sync ping counts:', pingErr);
-          stateRef.perCounts = {};
-        }
-        
         // Start from next incomplete period
         stateRef.currentPeriod = Math.min(8, Math.max(1, maxP + 1));
-        
-        // If all 8 periods are complete, stop
-        if (maxP >= 8) {
-          stateRef.allPeriodsComplete = true;
-          setStatus('All periods completed for today');
-          return; // Don't start timer
-        }
-        
-        console.log(`Starting pings from period ${stateRef.currentPeriod}, max completed: ${maxP}`);
+        stateRef.perCounts = {}; // Reset counts for fresh start
+        console.log(`Starting pings from period ${stateRef.currentPeriod}`);
       } catch (err) {
         console.error('Failed to load today attendance:', err);
         stateRef.currentPeriod = 1; // Default to period 1
-        stateRef.perCounts = {};
-      }
-      
-      // Don't start timer if all periods are complete
-      if (stateRef.allPeriodsComplete) {
-        setStatus('All periods completed for today');
-        return;
       }
       
       // Get interval from settings
@@ -695,22 +554,30 @@ useEffect(() => {
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Current Day Attendance</Text>
               {(() => {
-                // Create a map of period number to status
-                const periodStatusMap = {};
-                (attendance || []).forEach(p => {
-                  periodStatusMap[Number(p.periodNumber)] = p.status;
-                });
-                
                 const presentSet = new Set((attendance||[]).filter(p=>p.status==='present').map(p=>Number(p.periodNumber)));
                 const ord = ['1st','2nd','3rd','4th','5th','6th','7th','8th'];
+                const s = settingsRef.current || {};
+                // Determine which periods are "decided" (past windows)
+                const now = new Date();
+                let decidedPeriod = 8;
+                try {
+                  if (s?.startTime && s?.endTime) {
+                    const [sh, sm] = String(s.startTime).split(':').map(Number);
+                    const [eh, em] = String(s.endTime).split(':').map(Number);
+                    const startM = (sh||0)*60 + (sm||0);
+                    const endM = (eh||0)*60 + (em||0);
+                    const total = Math.max(1, endM - startM);
+                    const slot = Math.max(1, Math.round(total / 8));
+                    const nowM = now.getHours()*60 + now.getMinutes();
+                    const idx = Math.min(7, Math.max(-1, Math.floor((nowM - startM) / slot) - 1));
+                    decidedPeriod = Math.max(0, Math.min(8, idx + 1));
+                  }
+                } catch {}
                 const lines = [];
-                
-                // Show all periods - if status exists, show it; otherwise show '-'
                 for (let i=1;i<=8;i++) {
-                  const status = periodStatusMap[i];
                   let label = '-';
-                  if (status === 'present' || status === 'absent') {
-                    label = status;
+                  if (i <= decidedPeriod) {
+                    label = presentSet.has(i) ? 'present' : 'absent';
                   }
                   const color = label==='present' ? '#0f0' : (label==='absent' ? '#f00' : '#ddd');
                   lines.push(
@@ -719,10 +586,8 @@ useEffect(() => {
                     </Text>
                   );
                 }
-                
-                // Show overall only when all 8 periods have status (present or absent)
-                const allDecided = Array.from({length: 8}, (_, i) => i + 1).every(p => periodStatusMap[p] === 'present' || periodStatusMap[p] === 'absent');
-                if (allDecided) {
+                // Show overall only when all periods decided
+                if (decidedPeriod === 8) {
                   const overall = presentSet.size===8 ? 'present' : 'absent';
                   lines.push(
                     <Text key="overall" style={{ color: overall==='present' ? '#0f0' : '#f00', fontSize: 16, marginTop: 6 }}>
@@ -791,7 +656,8 @@ useEffect(() => {
 const styles = StyleSheet.create({
   container: { 
     flex: 1, 
-    backgroundColor: '#F5F5F5'
+    position: 'relative',
+    backgroundColor: '#000' 
   },
   background: { 
     position: 'absolute',
