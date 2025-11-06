@@ -498,38 +498,6 @@ export default function AdminDashboard() {
                 </View>
               </View>
             </Panel>
-              {(() => {
-                // Show online users' locations with clickable icons
-                const onlineUsers = users.filter(u => u.loggedIn);
-                if (onlineUsers.length === 0) return null;
-                return (
-                  <View style={{ marginTop: 8 }}>
-                    {onlineUsers.slice(0, 5).map(u => {
-                      // Get latest location from pings
-                      const latestPing = (recentPings||[]).filter(p => String(p.studentId) === String(u._id))
-                        .sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
-                      const loc = latestPing?.location || u.location;
-                      if (!loc || (!loc.latitude && !loc.lat)) return null;
-                      const lat = loc.latitude || loc.lat;
-                      const lon = loc.longitude || loc.lon;
-                      return (
-                        <View key={u._id} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-                          <Text style={[styles.muted, { fontSize: 12, flex: 1 }]}>
-                            {u.name}
-                          </Text>
-                          <TouchableOpacity 
-                            onPress={() => setSelectedUserId(String(u._id))}
-                            style={{ marginLeft: 8, padding: 4 }}
-                          >
-                            <Ionicons name="location" size={16} color={selectedUserId === String(u._id) ? '#ef4444' : '#60a5fa'} />
-                          </TouchableOpacity>
-                        </View>
-                      );
-                    })}
-                  </View>
-                );
-              })()}
-            </Panel>
 
             {/* Right: Notifications */}
             <Panel style={styles.rightCol}>
