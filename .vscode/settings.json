@@ -1,0 +1,16 @@
+{
+  // Disable Gradle/Java auto-import in this workspace (Expo managed workflow)
+  "java.import.gradle.enabled": false,
+  "java.import.gradle.wrapper.enabled": false,
+  "gradle.autoDetect": "off",
+  // Optional: keep VS Code from scanning native folders
+  "files.watcherExclude": {
+    "**/frontend/android/**": true,
+    "**/frontend/ios/**": true
+  },
+  "search.exclude": {
+    "**/frontend/android/**": true,
+    "**/frontend/ios/**": true
+  }
+}
+

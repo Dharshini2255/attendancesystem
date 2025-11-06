@@ -418,104 +418,86 @@ export default function AdminDashboard() {
           <View style={styles.grid}>
             {/* Left: Attendance Setup */}
 
-            {/* Center: Map / Overview */}
+            {/* Center: Analytics Overview (charts instead of map) */}
             <Panel style={styles.centerCol}>
-              <Text style={styles.panelTitle}>Real-time Attendance Overview</Text>
+              <Text style={styles.panelTitle}>Attendance Analytics Overview</Text>
               <View style={styles.metricsRow}>
-                <View style={styles.metricChip}><Text style={styles.metricNum}>{metrics.activeStudents}</Text><Text style={styles.metricLabel}>Online Students</Text></View>
+                <View style={styles.metricChip}><Text style={styles.metricNum}>{attendancePercent}%</Text><Text style={styles.metricLabel}>Overall Attendance</Text></View>
+                <View style={styles.metricChip}><Text style={styles.metricNum}>{users?.length||0}</Text><Text style={styles.metricLabel}>Total Students</Text></View>
+                <View style={styles.metricChip}><Text style={styles.metricNum}>{metrics.activeStudents}</Text><Text style={styles.metricLabel}>Online Now</Text></View>
                 <View style={styles.metricChip}><Text style={styles.metricNum}>{metrics.biometric}</Text><Text style={styles.metricLabel}>Biometric Pings</Text></View>
               </View>
-              <View style={styles.mapWrap}>
-                {Platform.OS === 'web' ? (
-                  (() => {
-                    const collegeLat = settings?.collegeLocation?.latitude || 12.823;
-                    const collegeLon = settings?.collegeLocation?.longitude || 80.043;
-                    // Build markers list for up to 25 online users' latest pings
-                    const onlineIds = new Set((users||[]).filter(u=>u.loggedIn).map(u=>String(u._id)));
-                    const latestByUser = {};
-                    (recentPings||[]).forEach(p => {
-                      if (p.location?.latitude && p.location?.longitude && p.studentId) {
-                        const uid = String(p.studentId);
-                        if (!onlineIds.has(uid)) return;
-                        if (!latestByUser[uid] || new Date(p.timestamp) > new Date(latestByUser[uid].timestamp)) {
-                          latestByUser[uid] = p;
+              <View style={{ gap: 12 }}>
+                <View style={{ flexDirection:'row', gap:12, flexWrap:'wrap' }}>
+                  <View style={[styles.card, styles.gaugeWrap, { flex:1, minWidth:260 }]}>
+                    <View style={[styles.gaugeCircle, { borderColor: attendancePercent>=75?'#10b981':(attendancePercent>=50?'#f59e0b':'#ef4444') }]}>
+                      <Text style={styles.gaugeText}>{attendancePercent}%</Text>
+                    </View>
+                    <Text style={styles.muted}>Overall attendance</Text>
+                  </View>
+                  <View style={[styles.card, { flex:2, minWidth:320 }]}>
+                    <Text style={styles.panelTitle}>Attendance by Class</Text>
+                    {(() => {
+                      const byClass = {};
+                      (attRows||[]).forEach(r => {
+                        const cls = r.class || r.className || r.section || 'Unknown';
+                        if (!byClass[cls]) byClass[cls] = { present:0, absent:0 };
+                        if (typeof r.present==='number' || typeof r.absent==='number') {
+                          byClass[cls].present += r.present||0; byClass[cls].absent += r.absent||0;
+                        } else if (r.status) {
+                          if (r.status==='present') byClass[cls].present += 1; else if (r.status==='absent') byClass[cls].absent += 1;
                         }
-                      }
-                    });
-                    const pins = Object.values(latestByUser).slice(0,25);
-                    const markerParams = [
-                      `${collegeLat},${collegeLon},red`,
-                      ...pins.map(p=>`${p.location.latitude},${p.location.longitude},blue`)
-                    ].map(s=>encodeURIComponent(s)).join('&markers=');
-                    const staticUrl = `https://staticmap.openstreetmap.de/staticmap.php?center=${collegeLat},${collegeLon}&zoom=${Math.max(6, Math.min(12, mapWebZoom))}&size=1000x400&maptype=mapnik&markers=${markerParams}`;
-                    return (
-                      <>
-                        <Image source={{ uri: staticUrl }} contentFit="cover" style={{ width:'100%', height:'100%' }} />
-                        <View style={{ position:'absolute', right: 10, bottom: 10, gap: 8 }}>
-                          <TouchableOpacity onPress={() => setMapWebZoom(z=>Math.min(12, Math.round((z+1))))} style={{ backgroundColor:'#0a0a0aff', paddingVertical:8, paddingHorizontal:12, borderRadius:8 }}>
-                            <Text style={{ color:'#fff', fontWeight:'800' }}>+</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity onPress={() => setMapWebZoom(z=>Math.max(6, Math.round((z-1))))} style={{ backgroundColor:'#0a0a0aff', paddingVertical:8, paddingHorizontal:12, borderRadius:8 }}>
-                            <Text style={{ color:'#fff', fontWeight:'800' }}>-</Text>
-                          </TouchableOpacity>
+                      });
+                      const items = Object.entries(byClass).map(([k,v])=>({ className:k, percent:(v.present+v.absent)>0?Math.round((v.present/(v.present+v.absent))*100):0 })).sort((a,b)=>b.percent-a.percent).slice(0,5);
+                      if (items.length===0) return <Text style={styles.muted}>No data available</Text>;
+                      return (
+                        <View style={{ gap:8 }}>
+                          {items.map((it,idx)=> (
+                            <View key={idx} style={{ gap:4 }}>
+                              <View style={{ flexDirection:'row', justifyContent:'space-between' }}>
+                                <Text style={styles.td}>{it.className}</Text>
+                                <Text style={styles.td}>{it.percent}%</Text>
+                              </View>
+                              <View style={styles.chartBar}>
+                                <View style={[styles.chartSegment, { width: `${it.percent}%`, backgroundColor:'#10b981' }]} />
+                                <View style={[styles.chartSegment, { width: `${100-it.percent}%`, backgroundColor:'transparent' }]} />
+                              </View>
+                            </View>
+                          ))}
                         </View>
-                      </>
-                    );
-                  })()
-                ) : (
-                  mapRegion && (
-                    <>
-                      <MapView
-                        style={{ width: '100%', height: '100%' }}
-                        region={mapRegion}
-                        onRegionChangeComplete={setMapRegion}
-                      >
-                        {(() => {
-                          const onlineIds = new Set((users||[]).filter(u=>u.loggedIn).map(u=>String(u._id)));
-                          const latestByUser = {};
-                          (recentPings||[]).forEach(p => {
-                            if (p.location?.latitude && p.location?.longitude && p.studentId) {
-                              const uid = String(p.studentId);
-                              if (!onlineIds.has(uid)) return; // only active users
-                              if (!latestByUser[uid] || new Date(p.timestamp) > new Date(latestByUser[uid].timestamp)) {
-                                latestByUser[uid] = p;
-                              }
-                            }
-                          });
-                          return Object.values(latestByUser).map((p, idx) => (
-                            <Marker
-                              key={p._id || p.studentId || idx}
-                              coordinate={{ latitude: p.location.latitude, longitude: p.location.longitude }}
-                              title={p.studentName || String(p.studentId)}
-                              description={new Date(p.timestamp).toLocaleTimeString()}
-                              onPress={() => setSelectedUserId(String(p.studentId))}
-                            />
-                          ));
-                        })()}
-                      </MapView>
-                      {/* Zoom controls */}
-                      <View style={{ position:'absolute', right: 10, bottom: 10, gap: 8 }}>
-                        <TouchableOpacity
-                          onPress={() => setMapRegion(r => r ? ({ ...r, latitudeDelta: r.latitudeDelta * 0.6, longitudeDelta: r.longitudeDelta * 0.6 }) : r)}
-                          style={{ backgroundColor:'#0a0a0aff', paddingVertical:8, paddingHorizontal:12, borderRadius:8 }}
-                        >
-                          <Text style={{ color:'#fff', fontWeight:'800' }}>+</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          onPress={() => setMapRegion(r => r ? ({ ...r, latitudeDelta: r.latitudeDelta / 0.6, longitudeDelta: r.longitudeDelta / 0.6 }) : r)}
-                          style={{ backgroundColor:'#0a0a0aff', paddingVertical:8, paddingHorizontal:12, borderRadius:8 }}
-                        >
-                          <Text style={{ color:'#fff', fontWeight:'800' }}>-</Text>
-                        </TouchableOpacity>
+                      );
+                    })()}
+                  </View>
+                </View>
+                <View style={[styles.card]}> 
+                  <Text style={styles.panelTitle}>Ping Trend (recent)</Text>
+                  {(() => {
+                    const buckets = {};
+                    (pings||[]).forEach(p => {
+                      const t = new Date(p.timestamp);
+                      const key = `${t.toLocaleDateString('en-CA')} ${('0'+t.getHours()).slice(-2)}:00`;
+                      buckets[key] = (buckets[key]||0) + 1;
+                    });
+                    const data = Object.entries(buckets).sort(([a],[b])=>a.localeCompare(b)).slice(-8);
+                    const max = Math.max(1, ...data.map(([,v])=>v));
+                    if (data.length===0) return <Text style={styles.muted}>No pings</Text>;
+                    return (
+                      <View style={{ flexDirection:'row', gap:8, alignItems:'flex-end' }}>
+                        {data.map(([k,v],i)=> (
+                          <View key={i} style={{ alignItems:'center', flex:1, minWidth:60 }}>
+                            <View style={{ height: 100, justifyContent:'flex-end' }}>
+                              <View style={{ height: Math.max(6, Math.round((v/max)*100)), backgroundColor:'#60a5fa', borderTopLeftRadius:4, borderTopRightRadius:4 }} />
+                            </View>
+                            <Text style={[styles.muted, { fontSize:10, textAlign:'center', marginTop:4 }]}>{k}</Text>
+                            <Text style={{ fontSize:10, textAlign:'center' }}>{v}</Text>
+                          </View>
+                        ))}
                       </View>
-                    </>
-                  )
-                )}
+                    );
+                  })()}
+                </View>
               </View>
-              <View style={styles.legendRow}>
-                <View style={[styles.legendDot,{backgroundColor:'#ef4444'}]} />
-                <Text style={styles.legendText}>Current User Locations</Text>
-              </View>
+            </Panel>
               {(() => {
                 // Show online users' locations with clickable icons
                 const onlineUsers = users.filter(u => u.loggedIn);
