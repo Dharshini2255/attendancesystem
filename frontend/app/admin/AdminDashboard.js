@@ -313,18 +313,33 @@ export default function AdminDashboard() {
     }
   };
 
+  // Real-time overall: percent online out of total users
   const attendancePercent = useMemo(() => {
-    let present = 0, absent = 0;
-    for (const r of attRows) {
-      if (typeof r.present === 'number' || typeof r.absent === 'number') {
-        present += r.present || 0; absent += r.absent || 0;
-      } else if (r.status) {
-        if (r.status === 'present') present += 1; else if (r.status === 'absent') absent += 1;
-      }
+    const totalUsers = (users||[]).length || 0;
+    const onlineUsers = (sessions?.loggedIn?.length || 0);
+    return totalUsers ? Math.round((onlineUsers / totalUsers) * 100) : 0;
+  }, [users, sessions]);
+
+  // Group helpers for charts
+  const onlineUsers = useMemo(() => (users||[]).filter(u => u.loggedIn), [users]);
+  const groupOnlineBy = useMemo(() => {
+    const by = { class: {}, department: {}, year: {} };
+    for (const u of onlineUsers) {
+      const cls = u.class || u.className || 'Unknown';
+      const dep = (u.department || 'Unknown').toUpperCase();
+      const yr = String(u.year || 'NA');
+      by.class[cls] = (by.class[cls]||0) + 1;
+      by.department[dep] = (by.department[dep]||0) + 1;
+      by.year[yr] = (by.year[yr]||0) + 1;
     }
-    const total = present + absent;
-    return total ? Math.round((present / total) * 100) : 0;
-  }, [attRows]);
+    return by;
+  }, [onlineUsers]);
+
+  // Visualization controls
+  const [vizType, setVizType] = useState('bar'); // bar | donut
+  const [vizCategory, setVizCategory] = useState('class'); // users|departments|year|class|overall
+  const [searchName, setSearchName] = useState('');
+  const [selectedUser, setSelectedUser] = useState(null);
 
   const usersByReg = useMemo(() => { const m = {}; (users||[]).forEach(u => { if (u?.regNo) m[u.regNo] = u; }); return m; }, [users]);
   const recentPings = useMemo(() => (pings||[]).filter(p => {
@@ -429,38 +444,36 @@ export default function AdminDashboard() {
               </View>
               <View style={{ gap: 12 }}>
                 <View style={{ flexDirection:'row', gap:12, flexWrap:'wrap' }}>
+                  {/* Overall real-time */}
                   <View style={[styles.card, styles.gaugeWrap, { flex:1, minWidth:260 }]}>
                     <View style={[styles.gaugeCircle, { borderColor: attendancePercent>=75?'#10b981':(attendancePercent>=50?'#f59e0b':'#ef4444') }]}>
                       <Text style={styles.gaugeText}>{attendancePercent}%</Text>
                     </View>
-                    <Text style={styles.muted}>Overall attendance</Text>
+                    <Text style={styles.muted}>Online / Total users</Text>
+                    <Text style={styles.muted}>{(sessions?.loggedIn?.length||0)} / {(users||[]).length}</Text>
                   </View>
+
+                  {/* Attendance by Class (online now) with colors */}
                   <View style={[styles.card, { flex:2, minWidth:320 }]}>
-                    <Text style={styles.panelTitle}>Attendance by Class</Text>
+                    <Text style={styles.panelTitle}>Online by Class</Text>
                     {(() => {
-                      const byClass = {};
-                      (attRows||[]).forEach(r => {
-                        const cls = r.class || r.className || r.section || 'Unknown';
-                        if (!byClass[cls]) byClass[cls] = { present:0, absent:0 };
-                        if (typeof r.present==='number' || typeof r.absent==='number') {
-                          byClass[cls].present += r.present||0; byClass[cls].absent += r.absent||0;
-                        } else if (r.status) {
-                          if (r.status==='present') byClass[cls].present += 1; else if (r.status==='absent') byClass[cls].absent += 1;
-                        }
-                      });
-                      const items = Object.entries(byClass).map(([k,v])=>({ className:k, percent:(v.present+v.absent)>0?Math.round((v.present/(v.present+v.absent))*100):0 })).sort((a,b)=>b.percent-a.percent).slice(0,5);
-                      if (items.length===0) return <Text style={styles.muted}>No data available</Text>;
+                      const entries = Object.entries(groupOnlineBy.class);
+                      if (entries.length===0) return <Text style={styles.muted}>No online users</Text>;
+                      const max = Math.max(1, ...entries.map(([,v])=>v));
+                      const palette = ['#60a5fa','#f59e0b','#10b981','#ef4444','#8b5cf6','#22d3ee','#84cc16','#fb7185'];
                       return (
                         <View style={{ gap:8 }}>
-                          {items.map((it,idx)=> (
-                            <View key={idx} style={{ gap:4 }}>
-                              <View style={{ flexDirection:'row', justifyContent:'space-between' }}>
-                                <Text style={styles.td}>{it.className}</Text>
-                                <Text style={styles.td}>{it.percent}%</Text>
+                          {entries.map(([name,val],idx)=> (
+                            <View key={name} style={{ gap:4 }}>
+                              <View style={{ flexDirection:'row', justifyContent:'space-between', alignItems:'center' }}>
+                                <View style={{ flexDirection:'row', alignItems:'center', gap:6 }}>
+                                  <View style={{ width:10, height:10, borderRadius:5, backgroundColor: palette[idx%palette.length] }} />
+                                  <Text style={styles.td}>{name}</Text>
+                                </View>
+                                <Text style={styles.td}>{val}</Text>
                               </View>
                               <View style={styles.chartBar}>
-                                <View style={[styles.chartSegment, { width: `${it.percent}%`, backgroundColor:'#10b981' }]} />
-                                <View style={[styles.chartSegment, { width: `${100-it.percent}%`, backgroundColor:'transparent' }]} />
+                                <View style={[styles.chartSegment, { width: `${Math.round((val/max)*100)}%`, backgroundColor: palette[idx%palette.length] }]} />
                               </View>
                             </View>
                           ))}
@@ -469,32 +482,90 @@ export default function AdminDashboard() {
                     })()}
                   </View>
                 </View>
-                <View style={[styles.card]}> 
-                  <Text style={styles.panelTitle}>Ping Trend (recent)</Text>
-                  {(() => {
-                    const buckets = {};
-                    (pings||[]).forEach(p => {
-                      const t = new Date(p.timestamp);
-                      const key = `${t.toLocaleDateString('en-CA')} ${('0'+t.getHours()).slice(-2)}:00`;
-                      buckets[key] = (buckets[key]||0) + 1;
-                    });
-                    const data = Object.entries(buckets).sort(([a],[b])=>a.localeCompare(b)).slice(-8);
-                    const max = Math.max(1, ...data.map(([,v])=>v));
-                    if (data.length===0) return <Text style={styles.muted}>No pings</Text>;
-                    return (
-                      <View style={{ flexDirection:'row', gap:8, alignItems:'flex-end' }}>
-                        {data.map(([k,v],i)=> (
-                          <View key={i} style={{ alignItems:'center', flex:1, minWidth:60 }}>
-                            <View style={{ height: 100, justifyContent:'flex-end' }}>
-                              <View style={{ height: Math.max(6, Math.round((v/max)*100)), backgroundColor:'#60a5fa', borderTopLeftRadius:4, borderTopRightRadius:4 }} />
-                            </View>
-                            <Text style={[styles.muted, { fontSize:10, textAlign:'center', marginTop:4 }]}>{k}</Text>
-                            <Text style={{ fontSize:10, textAlign:'center' }}>{v}</Text>
+
+                {/* Visualization controls + main chart */}
+                <View style={{ flexDirection:'row', gap:12, alignItems:'flex-start', flexWrap:'wrap' }}>
+                  <View style={[styles.card, { minWidth:220, maxWidth:260, flex:1 }]}>
+                    <Text style={styles.panelTitle}>Visualization</Text>
+                    <View style={styles.segmentRow}>
+                      {['bar','donut'].map(t => (
+                        <TouchableOpacity key={t} onPress={()=>setVizType(t)} style={[styles.segmentBtn, vizType===t && styles.segmentActive]}><Text style={styles.segmentLabel}>{t}</Text></TouchableOpacity>
+                      ))}
+                    </View>
+                    <Text style={[styles.muted,{marginTop:8}]}>Category</Text>
+                    <View style={styles.segmentRow}>
+                      {['class','departments','year','overall'].map(c => (
+                        <TouchableOpacity key={c} onPress={()=>setVizCategory(c)} style={[styles.segmentBtn, vizCategory===c && styles.segmentActive]}><Text style={styles.segmentLabel}>{c}</Text></TouchableOpacity>
+                      ))}
+                    </View>
+                    <Text style={[styles.muted,{marginTop:8}]}>Search user</Text>
+                    {Platform.OS==='web' ? (
+                      <input value={searchName} onChange={e=>setSearchName(e.target.value)} placeholder="Type name" style={styles.webInput} />
+                    ) : (
+                      <TextInput value={searchName} onChangeText={setSearchName} placeholder="Type name" style={styles.input} />
+                    )}
+                    <TouchableOpacity onPress={()=>{
+                      const nm = (searchName||'').trim().toLowerCase();
+                      const u = (users||[]).find(x => (x.name||'').toLowerCase().includes(nm));
+                      setSelectedUser(u||null);
+                    }} style={styles.primaryBtn}><Text style={styles.primaryBtnText}>View</Text></TouchableOpacity>
+                  </View>
+
+                  <View style={[styles.card, { flex:3, minWidth:300 }]}>
+                    <Text style={styles.panelTitle}>Selected view</Text>
+                    {(() => {
+                      if (selectedUser) {
+                        const rp = (pings||[]).filter(p=>String(p.studentId)===String(selectedUser._id)).sort((a,b)=> new Date(b.timestamp)-new Date(a.timestamp))[0];
+                        return (
+                          <View style={{ gap:6 }}>
+                            <Text style={styles.td}>{selectedUser.name} ({selectedUser.regNo})</Text>
+                            <Text style={styles.muted}>Class: {selectedUser.class||'-'} | Dept: {selectedUser.department||'-'} | Year: {selectedUser.year||'-'}</Text>
+                            <Text style={styles.muted}>Status: {selectedUser.loggedIn?'Online':'Offline'}</Text>
+                            {rp?.location?.latitude && <Text style={styles.muted}>Last location: {rp.location.latitude.toFixed(4)}, {rp.location.longitude.toFixed(4)} at {new Date(rp.timestamp).toLocaleString()}</Text>}
                           </View>
-                        ))}
-                      </View>
-                    );
-                  })()}
+                        );
+                      }
+                      const palette = ['#60a5fa','#f59e0b','#10b981','#ef4444','#8b5cf6','#22d3ee','#84cc16','#fb7185'];
+                      const dataSrc = vizCategory==='class'? groupOnlineBy.class : vizCategory==='departments'? groupOnlineBy.department : vizCategory==='year'? groupOnlineBy.year : { Online:(sessions?.loggedIn?.length||0), Offline: Math.max(0,(users||[]).length-(sessions?.loggedIn?.length||0)) };
+                      const entries = Object.entries(dataSrc);
+                      if (entries.length===0) return <Text style={styles.muted}>No data</Text>;
+                      const total = entries.reduce((s,[,v])=>s+v,0);
+                      const max = Math.max(1, ...entries.map(([,v])=>v));
+                      if (vizType==='donut') {
+                        return (
+                          <View style={{ gap:8 }}>
+                            <View style={{ flexDirection:'row', flexWrap:'wrap', gap:12 }}>
+                              {entries.map(([label,val],idx)=> (
+                                <View key={label} style={{ alignItems:'center' }}>
+                                  <View style={{ width:80, height:80, borderRadius:40, borderWidth:10, borderColor: palette[idx%palette.length], opacity:0.9 }} />
+                                  <Text style={{ fontSize:12, marginTop:4 }}>{label}: {val}</Text>
+                                </View>
+                              ))}
+                            </View>
+                            <Text style={styles.muted}>Total: {total}</Text>
+                          </View>
+                        );
+                      }
+                      return (
+                        <View style={{ gap:8 }}>
+                          {entries.map(([label,val],idx)=> (
+                            <View key={label} style={{ gap:4 }}>
+                              <View style={{ flexDirection:'row', justifyContent:'space-between', alignItems:'center' }}>
+                                <View style={{ flexDirection:'row', alignItems:'center', gap:6 }}>
+                                  <View style={{ width:10, height:10, borderRadius:5, backgroundColor: palette[idx%palette.length] }} />
+                                  <Text style={styles.td}>{label}</Text>
+                                </View>
+                                <Text style={styles.td}>{val}</Text>
+                              </View>
+                              <View style={styles.chartBar}>
+                                <View style={[styles.chartSegment, { width: `${Math.round((val/max)*100)}%`, backgroundColor: palette[idx%palette.length] }]} />
+                              </View>
+                            </View>
+                          ))}
+                        </View>
+                      );
+                    })()}
+                  </View>
                 </View>
               </View>
             </Panel>
