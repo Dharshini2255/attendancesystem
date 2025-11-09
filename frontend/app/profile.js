@@ -16,7 +16,9 @@ import {
   TouchableOpacity,
   Alert,
   Platform,
-  ImageBackground
+  ImageBackground,
+  Modal,
+  TextInput
 } from 'react-native';
 
 const isWeb = Platform.OS === 'web';
@@ -39,6 +41,9 @@ export default function Profile() {
   const [attendanceFrom, setAttendanceFrom] = useState(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toLocaleDateString('en-CA'));
   const [attendanceTo, setAttendanceTo] = useState(new Date().toLocaleDateString('en-CA'));
   const [loadingAttendance, setLoadingAttendance] = useState(false);
+  const [queryModalVisible, setQueryModalVisible] = useState(false);
+  const [queryMessage, setQueryMessage] = useState('');
+  const [messages, setMessages] = useState([]);
 
   // Resolve username either from route or stored user
   useEffect(() => {
@@ -86,7 +91,21 @@ export default function Profile() {
   useEffect(() => {
     if (!userInfo?._id) return;
     loadAttendance();
+    loadMessages();
   }, [userInfo]);
+
+  const loadMessages = async () => {
+    if (!userInfo?._id) return;
+    try {
+      const res = await fetch(apiUrl(`/messages/${userInfo._id}`));
+      const data = await res.json();
+      if (res.ok) {
+        setMessages(data.messages || []);
+      }
+    } catch (err) {
+      console.error('Failed to load messages:', err);
+    }
+  };
 
   const loadAttendance = async () => {
     if (!userInfo?._id) return;
@@ -548,13 +567,101 @@ export default function Profile() {
           {/* Help Section */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Need Help?</Text>
-            <TouchableOpacity onPress={handleHelpRequest} style={styles.helpButton}>
-              <Ionicons name="help-circle-outline" size={24} color="#fff" />
-              <Text style={styles.helpButtonText}>Request Help</Text>
-            </TouchableOpacity>
+            <View style={styles.helpButtonsRow}>
+              <TouchableOpacity onPress={handleHelpRequest} style={styles.helpButton}>
+                <Ionicons name="help-circle-outline" size={24} color="#fff" />
+                <Text style={styles.helpButtonText}>Request Help</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setQueryModalVisible(true)} style={[styles.helpButton, { backgroundColor: '#3b82f6' }]}>
+                <Ionicons name="chatbubble-outline" size={24} color="#fff" />
+                <Text style={styles.helpButtonText}>Send Query</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </ScrollView>
       </View>
+
+      {/* Query/Message Modal */}
+      <Modal
+        visible={queryModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setQueryModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Send Query to Admin</Text>
+              <TouchableOpacity onPress={() => setQueryModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
+            
+            {/* Messages List */}
+            {messages.length > 0 && (
+              <ScrollView style={styles.messagesList}>
+                {messages.map((msg, idx) => (
+                  <View key={idx} style={[styles.messageBubble, msg.sender === 'admin' ? styles.messageAdmin : styles.messageStudent]}>
+                    <Text style={styles.messageSender}>{msg.sender === 'admin' ? 'Admin' : 'You'}</Text>
+                    <Text style={styles.messageText}>{msg.message}</Text>
+                    <Text style={styles.messageTime}>{new Date(msg.at).toLocaleString()}</Text>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Type your query..."
+              multiline
+              numberOfLines={4}
+              value={queryMessage}
+              onChangeText={setQueryMessage}
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.helpButton, { backgroundColor: '#64748b', marginTop: 0 }]}
+                onPress={() => setQueryModalVisible(false)}
+              >
+                <Text style={styles.helpButtonText}>Close</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.helpButton, { backgroundColor: '#3b82f6', marginTop: 0 }]}
+                onPress={async () => {
+                  if (!queryMessage.trim()) {
+                    Alert.alert('Error', 'Please enter a message');
+                    return;
+                  }
+                  try {
+                    const response = await fetch(apiUrl('/messages/send'), {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        studentId: userInfo._id,
+                        sender: 'student',
+                        message: queryMessage
+                      })
+                    });
+                    const data = await response.json();
+                    if (response.ok) {
+                      Alert.alert('Success', 'Query sent successfully');
+                      setQueryMessage('');
+                      await loadMessages();
+                    } else {
+                      Alert.alert('Error', data.error || 'Failed to send query');
+                    }
+                  } catch (err) {
+                    console.error('Send query error:', err);
+                    Alert.alert('Error', 'Failed to send query');
+                  }
+                }}
+              >
+                <Text style={styles.helpButtonText}>Send</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ImageBackground>
   );
 }
@@ -808,5 +915,86 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  helpButtonsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 10,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: 'rgba(0,0,0,0.9)',
+    borderRadius: 16,
+    padding: 20,
+    width: Platform.OS === 'web' ? 500 : '90%',
+    maxWidth: 500,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  messagesList: {
+    maxHeight: 200,
+    marginBottom: 16,
+    padding: 10,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 8,
+  },
+  messageBubble: {
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  messageAdmin: {
+    backgroundColor: 'rgba(59, 130, 246, 0.3)',
+    alignSelf: 'flex-start',
+  },
+  messageStudent: {
+    backgroundColor: 'rgba(16, 185, 129, 0.3)',
+    alignSelf: 'flex-end',
+  },
+  messageSender: {
+    color: '#60a5fa',
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  messageText: {
+    color: '#fff',
+    fontSize: 14,
+    marginBottom: 4,
+  },
+  messageTime: {
+    color: '#aaa',
+    fontSize: 10,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+    borderRadius: 8,
+    padding: 12,
+    minHeight: 100,
+    textAlignVertical: 'top',
+    marginBottom: 16,
+    color: '#fff',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'flex-end',
   },
 });

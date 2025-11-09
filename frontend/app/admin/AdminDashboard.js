@@ -1,7 +1,7 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Alert, ScrollView, StyleSheet, Text, View, TouchableOpacity, Platform, TextInput, Switch, useWindowDimensions, Linking } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, View, TouchableOpacity, Platform, TextInput, Switch, useWindowDimensions, Linking, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { Image } from 'expo-image';
@@ -45,6 +45,10 @@ export default function AdminDashboard() {
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [mapRegion, setMapRegion] = useState(null);
   const [mapWebZoom, setMapWebZoom] = useState(9);
+  const [replyModalVisible, setReplyModalVisible] = useState(false);
+  const [replyStudentId, setReplyStudentId] = useState(null);
+  const [replyStudentName, setReplyStudentName] = useState(null);
+  const [replyMessage, setReplyMessage] = useState('');
 
   useEffect(() => {
     (async () => {
@@ -2115,7 +2119,22 @@ export default function AdminDashboard() {
                       </View>
                     </View>
                     <Text style={[styles.td,{flex:2}]}>{n.studentName} ({n.regNo})</Text>
-                    <Text style={[styles.td,{flex:3}]}>{n.message}</Text>
+                    <View style={{ flex: 3, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Text style={[styles.td,{flex:1}]}>{n.message}</Text>
+                      {n.type === 'helpRequest' && (
+                        <TouchableOpacity 
+                          onPress={() => {
+                            setReplyStudentId(n.studentId);
+                            setReplyStudentName(n.studentName);
+                            setReplyModalVisible(true);
+                          }}
+                          style={[styles.secondaryBtn, { marginTop: 0, paddingVertical: 4, paddingHorizontal: 8 }]}
+                        >
+                          <Ionicons name="chatbubble-outline" size={14} color="#000" />
+                          <Text style={[styles.secondaryBtnText, { fontSize: 12 }]}>Reply</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
                   </View>
                 );
               })}
@@ -2124,6 +2143,74 @@ export default function AdminDashboard() {
         )}
         </Panel>
       </ScrollView>
+
+      {/* Reply Modal */}
+      <Modal
+        visible={replyModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setReplyModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Reply to {replyStudentName}</Text>
+              <TouchableOpacity onPress={() => setReplyModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#000" />
+              </TouchableOpacity>
+            </View>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Type your reply..."
+              multiline
+              numberOfLines={4}
+              value={replyMessage}
+              onChangeText={setReplyMessage}
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.secondaryBtn, { marginTop: 0 }]}
+                onPress={() => setReplyModalVisible(false)}
+              >
+                <Text style={styles.secondaryBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.primaryBtn, { marginTop: 0 }]}
+                onPress={async () => {
+                  if (!replyMessage.trim()) {
+                    Alert.alert('Error', 'Please enter a message');
+                    return;
+                  }
+                  try {
+                    const response = await fetch(apiUrl('/messages/send'), {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        studentId: replyStudentId,
+                        sender: 'admin',
+                        message: replyMessage
+                      })
+                    });
+                    const data = await response.json();
+                    if (response.ok) {
+                      Alert.alert('Success', 'Reply sent successfully');
+                      setReplyMessage('');
+                      setReplyModalVisible(false);
+                    } else {
+                      Alert.alert('Error', data.error || 'Failed to send reply');
+                    }
+                  } catch (err) {
+                    console.error('Send reply error:', err);
+                    Alert.alert('Error', 'Failed to send reply');
+                  }
+                }}
+              >
+                <Text style={styles.primaryBtnText}>Send Reply</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Slide-in filter sidebar (web optimized, mobile full-screen) */}
       {showFilters && (
@@ -2722,5 +2809,45 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    width: Platform.OS === 'web' ? 500 : '90%',
+    maxWidth: 500,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#000',
+    fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times',
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 8,
+    padding: 12,
+    minHeight: 100,
+    textAlignVertical: 'top',
+    marginBottom: 16,
+    fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'flex-end',
   },
 });

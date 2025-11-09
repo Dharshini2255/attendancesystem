@@ -82,9 +82,25 @@ const notificationSchema = new mongoose.Schema({
   regNo: String,
   message: String,
   at: { type: Date, default: Date.now },
-  read: { type: Boolean, default: false }
+  read: { type: Boolean, default: false },
+  attendanceStatus: { type: String, enum: ['present', 'absent', null], default: null } // For help requests
 }, { timestamps: true });
+// Add index to prevent duplicates
+notificationSchema.index({ type: 1, studentId: 1, at: 1 }, { unique: false });
 const Notification = mongoose.model("Notification", notificationSchema);
+
+// Message/Reply system for admin-user communication
+const messageSchema = new mongoose.Schema({
+  studentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Student' },
+  studentName: String,
+  regNo: String,
+  sender: { type: String, enum: ['student', 'admin'], required: true },
+  message: String,
+  replyTo: { type: mongoose.Schema.Types.ObjectId, ref: 'Message', default: null }, // For threading
+  read: { type: Boolean, default: false },
+  at: { type: Date, default: Date.now }
+}, { timestamps: true });
+const Message = mongoose.model("Message", messageSchema);
 
 // ------------------- Validation Routes -------------------
 app.post('/check-student', async (req, res) => {
@@ -775,17 +791,55 @@ app.post('/help/request', async (req, res) => {
     const student = await Student.findById(studentId);
     if (!student) return res.status(404).json({ error: 'Student not found' });
 
+    // Check today's attendance status
+    const todayLocal = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    const todayAttendance = await Attendance.findOne({ studentId, date: todayLocal }).lean();
+    let attendanceStatus = null;
+    if (todayAttendance && todayAttendance.periods && todayAttendance.periods.length > 0) {
+      const presentCount = todayAttendance.periods.filter(p => p.status === 'present').length;
+      attendanceStatus = presentCount === 8 ? 'present' : (presentCount > 0 ? 'partial' : 'absent');
+    } else {
+      attendanceStatus = 'absent';
+    }
+
+    // Check for duplicate help request in last 5 minutes
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    const recentHelpRequest = await Notification.findOne({
+      type: 'helpRequest',
+      studentId: student._id,
+      at: { $gte: fiveMinutesAgo }
+    }).lean();
+
+    if (recentHelpRequest) {
+      return res.status(400).json({ error: 'Please wait before sending another help request' });
+    }
+
+    const helpMessage = message || `${student.name} (${student.regNo}) requested help`;
+    const statusText = attendanceStatus === 'present' ? 'Present' : (attendanceStatus === 'partial' ? 'Partially Present' : 'Absent');
+    
     const helpNotification = new Notification({
       type: 'helpRequest',
       studentId: student._id,
       studentName: student.name,
       regNo: student.regNo,
-      message: message || `${student.name} (${student.regNo}) requested help`,
+      message: `${helpMessage} (Status: ${statusText})`,
+      attendanceStatus: attendanceStatus,
       at: new Date()
     });
     await helpNotification.save();
 
-    res.json({ ok: true, message: 'Help request sent successfully' });
+    // Also create a message for the conversation
+    const helpMessageDoc = new Message({
+      studentId: student._id,
+      studentName: student.name,
+      regNo: student.regNo,
+      sender: 'student',
+      message: message || 'Requested help',
+      at: new Date()
+    });
+    await helpMessageDoc.save();
+
+    res.json({ ok: true, message: 'Help request sent successfully', attendanceStatus });
   } catch (err) {
     console.error('Help request error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -814,28 +868,59 @@ app.get('/admin/notifications', async (req, res) => {
     // Get stored notifications from database (online, offline, locationOff, helpRequest)
     const storedNotifications = await Notification.find({})
       .sort({ at: -1 })
-      .limit(Number(limit))
+      .limit(Number(limit) * 2) // Get more to filter duplicates
       .lean();
 
-    const alerts = storedNotifications.map(n => ({
+    // Deduplicate notifications - keep only the most recent of each type+studentId combination within a time window
+    const seen = new Map();
+    const uniqueNotifications = [];
+    for (const n of storedNotifications) {
+      const key = `${n.type}-${String(n.studentId)}`;
+      const timeWindow = 60 * 1000; // 1 minute window for duplicates
+      
+      if (seen.has(key)) {
+        const lastSeen = seen.get(key);
+        const timeDiff = Math.abs(new Date(n.at) - new Date(lastSeen.at));
+        if (timeDiff < timeWindow) {
+          // Skip duplicate within time window
+          continue;
+        }
+      }
+      
+      seen.set(key, n);
+      uniqueNotifications.push(n);
+    }
+
+    const alerts = uniqueNotifications.slice(0, Number(limit)).map(n => ({
       type: n.type,
       studentId: String(n.studentId),
       studentName: n.studentName,
       regNo: n.regNo,
       message: n.message,
-      at: n.at
+      at: n.at,
+      attendanceStatus: n.attendanceStatus || null,
+      _id: String(n._id) // Include ID for reply functionality
     }));
 
     // Add noPing notifications if ping is enabled and within window
+    // Deduplicate by checking if we already have a recent noPing for this student
     if (ctrl?.pingEnabled && withinWindow) {
       const since = new Date(now.getTime() - intervalMs * 2);
       const students = await Student.find({}).select('name regNo username').lean();
+      const noPingSeen = new Set();
+      
       for (const s of students) {
+        const studentIdStr = String(s._id);
+        // Check if we already have a noPing notification for this student in alerts
+        const hasNoPing = alerts.some(a => a.type === 'noPing' && a.studentId === studentIdStr);
+        if (hasNoPing || noPingSeen.has(studentIdStr)) continue;
+        
         const last = await Ping.findOne({ studentId: s._id, timestamp: { $gte: since } }).sort({ timestamp: -1 }).lean();
         if (!last) {
+          noPingSeen.add(studentIdStr);
           alerts.push({ 
             type: 'noPing', 
-            studentId: String(s._id), 
+            studentId: studentIdStr, 
             studentName: s.name, 
             regNo: s.regNo, 
             message: `${s.name} (${s.regNo}) - No recent ping (location off or not in app).`, 
@@ -1391,6 +1476,76 @@ app.get('/admin/notifications/stream', async (req, res) => {
   const iv = setInterval(send, 8000);
   send();
   req.on('close', () => clearInterval(iv));
+});
+
+// Message/Reply endpoints
+// Get messages for a student
+app.get('/messages/:studentId', async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    const messages = await Message.find({ studentId })
+      .sort({ at: 1 })
+      .lean();
+    res.json({ messages });
+  } catch (err) {
+    console.error('Get messages error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get all messages for admin
+app.get('/admin/messages', async (req, res) => {
+  try {
+    const messages = await Message.find({})
+      .sort({ at: -1 })
+      .limit(100)
+      .lean();
+    res.json({ messages });
+  } catch (err) {
+    console.error('Get admin messages error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Send message (student or admin)
+app.post('/messages/send', async (req, res) => {
+  try {
+    const { studentId, sender, message, replyTo } = req.body;
+    if (!studentId || !sender || !message) {
+      return res.status(400).json({ error: 'studentId, sender, and message are required' });
+    }
+
+    const student = await Student.findById(studentId);
+    if (!student) return res.status(404).json({ error: 'Student not found' });
+
+    const messageDoc = new Message({
+      studentId,
+      studentName: student.name,
+      regNo: student.regNo,
+      sender,
+      message,
+      replyTo: replyTo || null,
+      at: new Date()
+    });
+    await messageDoc.save();
+
+    res.json({ ok: true, message: messageDoc });
+  } catch (err) {
+    console.error('Send message error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Mark message as read
+app.patch('/messages/:messageId/read', async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    await Message.findByIdAndUpdate(messageId, { read: true });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Mark message read error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 // ------------------- Server Startup -------------------
