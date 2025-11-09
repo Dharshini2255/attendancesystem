@@ -75,6 +75,17 @@ const pingSchema = new mongoose.Schema({
 });
 const Ping = mongoose.model("Ping", pingSchema);
 
+const notificationSchema = new mongoose.Schema({
+  type: { type: String, enum: ['online', 'offline', 'locationOff', 'helpRequest', 'noPing'], required: true },
+  studentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Student' },
+  studentName: String,
+  regNo: String,
+  message: String,
+  at: { type: Date, default: Date.now },
+  read: { type: Boolean, default: false }
+}, { timestamps: true });
+const Notification = mongoose.model("Notification", notificationSchema);
+
 // ------------------- Validation Routes -------------------
 app.post('/check-student', async (req, res) => {
   const { name, regNo } = req.body;
@@ -170,6 +181,17 @@ app.post('/login', async (req, res) => {
     user.lastLoginAt = new Date();
     await user.save();
 
+    // Create online notification
+    const onlineNotification = new Notification({
+      type: 'online',
+      studentId: user._id,
+      studentName: user.name,
+      regNo: user.regNo,
+      message: `${user.name} (${user.regNo}) is now online`,
+      at: new Date()
+    });
+    await onlineNotification.save();
+
     res.json({
       message: "✅ Login successful",
       user: {
@@ -201,6 +223,18 @@ app.post('/logout', async (req, res) => {
     user.loggedIn = false;
     user.lastLogoutAt = new Date();
     await user.save();
+
+    // Create offline notification
+    const offlineNotification = new Notification({
+      type: 'offline',
+      studentId: user._id,
+      studentName: user.name,
+      regNo: user.regNo,
+      message: `${user.name} (${user.regNo}) is now offline`,
+      at: new Date()
+    });
+    await offlineNotification.save();
+
     res.json({ ok: true });
   } catch (err) {
     console.error('Logout error:', err);
@@ -226,6 +260,17 @@ app.post('/attendance/mark', async (req, res) => {
     // Validate location is provided
     if (!location || typeof location.latitude !== 'number' || typeof location.longitude !== 'number' || 
         isNaN(location.latitude) || isNaN(location.longitude)) {
+      // Create location off notification
+      const locationOffNotification = new Notification({
+        type: 'locationOff',
+        studentId: student._id,
+        studentName: student.name,
+        regNo: student.regNo,
+        message: `${student.name} (${student.regNo}) switched off location while taking attendance`,
+        at: new Date()
+      });
+      await locationOffNotification.save();
+      
       return res.status(400).json({ error: "Valid location is required. Attendance not marked." });
     }
 
@@ -302,6 +347,43 @@ app.post('/attendance/mark', async (req, res) => {
       });
     }
 
+    // Validate ping time against period configuration
+    if (settings?.periodConfig && Array.isArray(settings.periodConfig) && settings.periodConfig.length > 0) {
+      const periodConfig = settings.periodConfig.find(p => p.periodNumber === periodNumber);
+      if (periodConfig && periodConfig.pings && Array.isArray(periodConfig.pings) && periodConfig.pings.length > 0) {
+        const now = new Date();
+        const nowIST = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+        const currentTime = `${String(nowIST.getHours()).padStart(2, '0')}:${String(nowIST.getMinutes()).padStart(2, '0')}`;
+        
+        // Check if current time matches any of the configured ping times (with ±5 minute tolerance)
+        const isWithinTimeWindow = periodConfig.pings.some(pingConfig => {
+          if (!pingConfig.time) return false;
+          const [pingHour, pingMin] = pingConfig.time.split(':').map(Number);
+          const pingTimeMinutes = pingHour * 60 + pingMin;
+          const [currHour, currMin] = currentTime.split(':').map(Number);
+          const currTimeMinutes = currHour * 60 + currMin;
+          const diff = Math.abs(currTimeMinutes - pingTimeMinutes);
+          // Allow ±5 minutes tolerance
+          return diff <= 5;
+        });
+
+        if (!isWithinTimeWindow) {
+          const allowedTimes = periodConfig.pings.map(p => p.time).filter(Boolean).join(', ');
+          return res.status(403).json({ 
+            error: `Ping time ${currentTime} is not within allowed time windows for period ${periodNumber}. Allowed times: ${allowedTimes}` 
+          });
+        }
+
+        // Validate timestampType matches the ping type
+        if (timestampType && periodConfig.pings.some(p => p.type === timestampType)) {
+          // Valid timestamp type
+        } else if (timestampType) {
+          // Invalid timestamp type, but we'll allow it with a warning
+          console.warn(`Timestamp type ${timestampType} doesn't match period config for period ${periodNumber}`);
+        }
+      }
+    }
+
     const { biometricType, biometricVerified } = req.body || {};
 
     const ping = new Ping({
@@ -364,7 +446,35 @@ app.post('/attendance/mark', async (req, res) => {
           }
         }
       }
-      return byCollege || byProx;
+      if (!byCollege && !byProx) return false;
+
+      // Validate ping time against period configuration
+      if (settings?.periodConfig && Array.isArray(settings.periodConfig) && settings.periodConfig.length > 0) {
+        const periodConfig = settings.periodConfig.find(per => per.periodNumber === p.periodNumber);
+        if (periodConfig && periodConfig.pings && Array.isArray(periodConfig.pings) && periodConfig.pings.length > 0) {
+          const pingTime = new Date(p.timestamp);
+          const pingTimeIST = new Date(pingTime.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+          const pingTimeStr = `${String(pingTimeIST.getHours()).padStart(2, '0')}:${String(pingTimeIST.getMinutes()).padStart(2, '0')}`;
+          
+          // Check if ping time matches any of the configured ping times (with ±5 minute tolerance)
+          const isWithinTimeWindow = periodConfig.pings.some(pingConfig => {
+            if (!pingConfig.time) return false;
+            const [pingHour, pingMin] = pingConfig.time.split(':').map(Number);
+            const expectedTimeMinutes = pingHour * 60 + pingMin;
+            const [actualHour, actualMin] = pingTimeStr.split(':').map(Number);
+            const actualTimeMinutes = actualHour * 60 + actualMin;
+            const diff = Math.abs(actualTimeMinutes - expectedTimeMinutes);
+            // Allow ±5 minutes tolerance
+            return diff <= 5;
+          });
+
+          if (!isWithinTimeWindow) {
+            return false; // Ping is outside allowed time window
+          }
+        }
+      }
+
+      return true;
     });
 
     const hasBiometric = validPings.some(p => p.biometricVerified === true);
@@ -506,7 +616,18 @@ const adminSettingsSchema = new mongoose.Schema({
   biometricTriggerMode: { type: String, enum: ['off','pingNumber','time','period'], default: 'pingNumber' },
   biometricAtPingNumber: { type: Number, default: 1 },
   biometricTimeWindows: [{ start: String, end: String }], // HH:mm
-  biometricPeriods: [Number]
+  biometricPeriods: [Number],
+  // Period-based ping configuration
+  collegeTiming: { from: String, to: String }, // HH:mm format
+  numberOfPeriods: { type: Number, default: 8 },
+  defaultPingCount: { type: Number, default: 4 },
+  periodConfig: [{
+    periodNumber: Number,
+    pingCount: Number,
+    pings: [{ type: String, time: String }] // type: 'start'|'after15mins'|'before10mins'|'end', time: 'HH:mm'
+  }],
+  biometricEnabled: { type: Boolean, default: false },
+  biometricTrigger: { type: String, enum: ['start','after15mins','before10mins','end'], default: 'start' }
 });
 const AdminSettings = mongoose.model('AdminSettings', adminSettingsSchema);
 
@@ -645,9 +766,36 @@ app.get('/admin/student/:id/history', async (req, res) => {
   }
 });
 
-// Notifications (basic: no recent ping)
-app.get('/admin/notifications', async (_req, res) => {
+// Help request endpoint
+app.post('/help/request', async (req, res) => {
   try {
+    const { studentId, message } = req.body;
+    if (!studentId) return res.status(400).json({ error: 'studentId required' });
+    
+    const student = await Student.findById(studentId);
+    if (!student) return res.status(404).json({ error: 'Student not found' });
+
+    const helpNotification = new Notification({
+      type: 'helpRequest',
+      studentId: student._id,
+      studentName: student.name,
+      regNo: student.regNo,
+      message: message || `${student.name} (${student.regNo}) requested help`,
+      at: new Date()
+    });
+    await helpNotification.save();
+
+    res.json({ ok: true, message: 'Help request sent successfully' });
+  } catch (err) {
+    console.error('Help request error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Notifications (all types: online, offline, locationOff, helpRequest, noPing)
+app.get('/admin/notifications', async (req, res) => {
+  try {
+    const { limit = 100 } = req.query;
     const ctrl = await AdminControl.findOne({ key: 'global' }).lean();
     const settings = await AdminSettings.findOne({ key: 'global' }).lean();
     const intervalMs = ctrl?.intervalMs || 60000;
@@ -663,19 +811,44 @@ app.get('/admin/notifications', async (_req, res) => {
       return m >= a && m <= b;
     })();
 
-    const alerts = [];
+    // Get stored notifications from database (online, offline, locationOff, helpRequest)
+    const storedNotifications = await Notification.find({})
+      .sort({ at: -1 })
+      .limit(Number(limit))
+      .lean();
+
+    const alerts = storedNotifications.map(n => ({
+      type: n.type,
+      studentId: String(n.studentId),
+      studentName: n.studentName,
+      regNo: n.regNo,
+      message: n.message,
+      at: n.at
+    }));
+
+    // Add noPing notifications if ping is enabled and within window
     if (ctrl?.pingEnabled && withinWindow) {
       const since = new Date(now.getTime() - intervalMs * 2);
       const students = await Student.find({}).select('name regNo username').lean();
       for (const s of students) {
         const last = await Ping.findOne({ studentId: s._id, timestamp: { $gte: since } }).sort({ timestamp: -1 }).lean();
         if (!last) {
-          alerts.push({ type: 'noPing', studentId: String(s._id), studentName: s.name, regNo: s.regNo, message: 'No recent ping (location off or not in app).', at: now });
+          alerts.push({ 
+            type: 'noPing', 
+            studentId: String(s._id), 
+            studentName: s.name, 
+            regNo: s.regNo, 
+            message: `${s.name} (${s.regNo}) - No recent ping (location off or not in app).`, 
+            at: now 
+          });
         }
       }
     }
 
-    res.json({ alerts });
+    // Sort by date (newest first)
+    alerts.sort((a, b) => new Date(b.at) - new Date(a.at));
+
+    res.json({ alerts: alerts.slice(0, Number(limit)) });
   } catch (err) {
     console.error('Admin notifications error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -999,7 +1172,34 @@ async function recomputeAttendanceFor(studentId, dateStr) {
       } 
     }
     if (!(byCollege || byProx)) continue;
+
+    // Validate ping time against period configuration
     const k = Number(p.periodNumber)||1;
+    if (settings?.periodConfig && Array.isArray(settings.periodConfig) && settings.periodConfig.length > 0) {
+      const periodConfig = settings.periodConfig.find(per => per.periodNumber === k);
+      if (periodConfig && periodConfig.pings && Array.isArray(periodConfig.pings) && periodConfig.pings.length > 0) {
+        const pingTime = new Date(p.timestamp);
+        const pingTimeIST = new Date(pingTime.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+        const pingTimeStr = `${String(pingTimeIST.getHours()).padStart(2, '0')}:${String(pingTimeIST.getMinutes()).padStart(2, '0')}`;
+        
+        // Check if ping time matches any of the configured ping times (with ±5 minute tolerance)
+        const isWithinTimeWindow = periodConfig.pings.some(pingConfig => {
+          if (!pingConfig.time) return false;
+          const [pingHour, pingMin] = pingConfig.time.split(':').map(Number);
+          const expectedTimeMinutes = pingHour * 60 + pingMin;
+          const [actualHour, actualMin] = pingTimeStr.split(':').map(Number);
+          const actualTimeMinutes = actualHour * 60 + actualMin;
+          const diff = Math.abs(actualTimeMinutes - expectedTimeMinutes);
+          // Allow ±5 minutes tolerance
+          return diff <= 5;
+        });
+
+        if (!isWithinTimeWindow) {
+          continue; // Skip ping outside allowed time window
+        }
+      }
+    }
+
     if (!per[k]) per[k] = { count:0, biometric:false };
     per[k].count += 1; if (p.biometricVerified) per[k].biometric = true;
   }
@@ -1156,15 +1356,32 @@ app.get('/admin/notifications/stream', async (req, res) => {
         const a = sh*60+sm, b = eh*60+em;
         return m >= a && m <= b;
       })();
-      const alerts = [];
+      
+      // Get recent stored notifications (last 5 minutes)
+      const recentTime = new Date(now.getTime() - 5 * 60 * 1000);
+      const storedNotifications = await Notification.find({ at: { $gte: recentTime } })
+        .sort({ at: -1 })
+        .lean();
+      
+      const alerts = storedNotifications.map(n => ({
+        type: n.type,
+        studentId: String(n.studentId),
+        studentName: n.studentName,
+        regNo: n.regNo,
+        message: n.message,
+        at: n.at
+      }));
+      
       if (ctrl?.pingEnabled && withinWindow) {
         const since = new Date(now.getTime() - intervalMs * 2);
         const students = await Student.find({}).select('name regNo username').lean();
         for (const s of students) {
           const last = await Ping.findOne({ studentId: s._id, timestamp: { $gte: since } }).sort({ timestamp: -1 }).lean();
-          if (!last) alerts.push({ type: 'noPing', studentId: String(s._id), studentName: s.name, regNo: s.regNo, message: 'No recent ping', at: now });
+          if (!last) alerts.push({ type: 'noPing', studentId: String(s._id), studentName: s.name, regNo: s.regNo, message: `${s.name} (${s.regNo}) - No recent ping`, at: now });
         }
       }
+      
+      alerts.sort((a, b) => new Date(b.at) - new Date(a.at));
       res.write(`data: ${JSON.stringify({ alerts })}\n\n`);
     } catch (e) {
       res.write(`data: ${JSON.stringify({ alerts: [], error: true })}\n\n`);

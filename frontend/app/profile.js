@@ -82,11 +82,11 @@ export default function Profile() {
     })();
   }, [userInfo]);
 
-  // Load attendance data
+  // Load attendance data on mount and when userInfo changes
   useEffect(() => {
     if (!userInfo?._id) return;
     loadAttendance();
-  }, [userInfo, attendanceFrom, attendanceTo]);
+  }, [userInfo]);
 
   const loadAttendance = async () => {
     if (!userInfo?._id) return;
@@ -270,6 +270,46 @@ export default function Profile() {
     }
   };
 
+  const handleHelpRequest = async () => {
+    if (!userInfo?._id) {
+      Alert.alert('Error', 'User information not available');
+      return;
+    }
+
+    Alert.alert(
+      'Request Help',
+      'Do you want to send a help request to the admin?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Send',
+          onPress: async () => {
+            try {
+              const response = await fetch(apiUrl('/help/request'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  studentId: userInfo._id,
+                  message: `${userInfo.name} (${userInfo.regNo}) requested help`
+                })
+              });
+
+              const data = await response.json();
+              if (response.ok) {
+                Alert.alert('Success', 'Help request sent successfully. Admin will be notified.');
+              } else {
+                Alert.alert('Error', data.error || 'Failed to send help request');
+              }
+            } catch (err) {
+              console.error('Help request error:', err);
+              Alert.alert('Error', 'Failed to send help request. Please try again.');
+            }
+          }
+        }
+      ]
+    );
+  };
+
   if (loading) {
     return (
       <View style={styles.container}>
@@ -425,6 +465,9 @@ export default function Profile() {
                     onChange={e => setAttendanceTo(e.target.value)} 
                     style={styles.dateInput} 
                   />
+                  <TouchableOpacity onPress={loadAttendance} style={styles.applyButton}>
+                    <Text style={styles.applyButtonText}>Apply Filter</Text>
+                  </TouchableOpacity>
                 </>
               ) : (
                 <>
@@ -432,6 +475,9 @@ export default function Profile() {
                   <Text style={styles.filterValue}>{attendanceFrom}</Text>
                   <Text style={styles.filterText}>To:</Text>
                   <Text style={styles.filterValue}>{attendanceTo}</Text>
+                  <TouchableOpacity onPress={loadAttendance} style={styles.applyButton}>
+                    <Text style={styles.applyButtonText}>Apply</Text>
+                  </TouchableOpacity>
                 </>
               )}
             </View>
@@ -497,6 +543,15 @@ export default function Profile() {
                 )}
               </View>
             )}
+          </View>
+
+          {/* Help Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Need Help?</Text>
+            <TouchableOpacity onPress={handleHelpRequest} style={styles.helpButton}>
+              <Ionicons name="help-circle-outline" size={24} color="#fff" />
+              <Text style={styles.helpButtonText}>Request Help</Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
       </View>
@@ -724,6 +779,34 @@ const styles = StyleSheet.create({
   exportButtonText: {
     color: '#fff',
     fontSize: 14,
+    fontWeight: '600',
+  },
+  applyButton: {
+    backgroundColor: '#60a5fa',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginLeft: 10,
+  },
+  applyButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  helpButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f59e0b',
+    paddingVertical: 15,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    gap: 10,
+    marginTop: 10,
+  },
+  helpButtonText: {
+    color: '#fff',
+    fontSize: 16,
     fontWeight: '600',
   },
 });
