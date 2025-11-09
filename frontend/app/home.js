@@ -674,27 +674,32 @@ useEffect(() => {
             </View>
 
           {/* User Info */}
-          <View style={styles.infoBox}>
-            <Text style={styles.label}>Reg No: <Text style={styles.value}>{user.regNo}</Text></Text>
-            <Text style={styles.label}>Class: <Text style={styles.value}>{user.class}</Text></Text>
-            <Text style={styles.label}>Year: <Text style={styles.value}>{user.year}</Text></Text>
-            <Text style={styles.label}>Phone: <Text style={styles.value}>{user.phone}</Text></Text>
-            <Text style={styles.label}>Email: <Text style={styles.value}>{user.email}</Text></Text>
-            <Text style={styles.label}>UUID: <Text style={styles.value}>{user.uuid}</Text></Text>
+          <View style={styles.infoBoxContainer}>
+            <View style={styles.infoBox}>
+              <Text style={styles.label}>Reg No: <Text style={styles.value}>{user.regNo}</Text></Text>
+              <Text style={styles.label}>Class: <Text style={styles.value}>{user.class}</Text></Text>
+              <Text style={styles.label}>Year: <Text style={styles.value}>{user.year}</Text></Text>
+              <Text style={styles.label}>Phone: <Text style={styles.value}>{user.phone}</Text></Text>
+              <Text style={styles.label}>Email: <Text style={styles.value}>{user.email}</Text></Text>
+              <Text style={styles.label}>UUID: <Text style={styles.value}>{user.uuid}</Text></Text>
+            </View>
           </View>
 
           {/* Auto-pinging is controlled by Admin Settings; no manual buttons */}
           {status ? (
-            <View style={styles.section}>
-              <Text style={styles.status}>{status}</Text>
+            <View style={styles.statusContainer}>
+              <View style={styles.section}>
+                <Text style={styles.status}>{status}</Text>
+              </View>
             </View>
           ) : null}
 
           {/* Current Day Attendance (visible after first attendance is marked) */}
           {attendance.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Current Day Attendance</Text>
-              {(() => {
+            <View style={styles.attendanceContainer}>
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Current Day Attendance</Text>
+                {(() => {
                 // Create a map of period number to status
                 const periodStatusMap = {};
                 (attendance || []).forEach(p => {
@@ -732,6 +737,7 @@ useEffect(() => {
                 }
                 return lines;
               })()}
+              </View>
             </View>
           )}
         </ScrollView>
@@ -828,10 +834,28 @@ const styles = StyleSheet.create({
   },
   header: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
   headerTitle: { color: '#fff', fontSize: 22, fontWeight: 'bold', marginLeft: 10 },
-  infoBox: { marginBottom: 20 },
+  infoBoxContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 12,
+    padding: 15,
+    marginBottom: 20,
+  },
+  infoBox: { marginBottom: 0 },
   label: { color: '#ccc', fontSize: 16, marginBottom: 5 },
   value: { color: '#fff', fontWeight: '600' },
-  section: { marginBottom: 20 },
+  attendanceContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 12,
+    padding: 15,
+    marginBottom: 20,
+  },
+  statusContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 12,
+    padding: 15,
+    marginBottom: 20,
+  },
+  section: { marginBottom: 0 },
   sectionTitle: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginBottom: 10 },
   buttonRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
     status: { color: '#0f0', fontSize: 16, marginTop: 10 },

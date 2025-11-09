@@ -907,14 +907,14 @@ export default function AdminDashboard() {
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                 <Text style={styles.panelTitle}>Attendance Analytics Overview</Text>
                 <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-                  <TouchableOpacity onPress={() => setShowChartConfig(!showChartConfig)} style={[styles.secondaryBtn, { marginTop: 0 }]}>
+                  <TouchableOpacity onPress={() => setShowChartConfig(!showChartConfig)} style={[styles.secondaryBtn, { marginTop: 0, flexDirection: 'row', alignItems: 'center', gap: 6 }]}>
                     <Ionicons name="settings-outline" size={16} color="#0f172a" />
                     <Text style={styles.secondaryBtnText}>Configure</Text>
                   </TouchableOpacity>
                   {Platform.OS === 'web' && (
                     <TouchableOpacity onPress={exportDashboardData} style={styles.exportButton}>
                       <Ionicons name="download-outline" size={16} color="#fff" />
-                      <Text style={styles.exportButtonText}>Export</Text>
+                      <Text style={[styles.exportButtonText, { color: '#fff' }]}>Export</Text>
                     </TouchableOpacity>
                   )}
                 </View>
@@ -1323,12 +1323,23 @@ export default function AdminDashboard() {
                       default: return '#64748b';
                     }
                   };
+                  const formatNotificationType = (type) => {
+                    if (!type) return 'Notification';
+                    switch(type) {
+                      case 'noPing': return 'No Ping';
+                      case 'locationOff': return 'Location Off';
+                      case 'helpRequest': return 'Help Request';
+                      case 'online': return 'Online';
+                      case 'offline': return 'Offline';
+                      default: return type.charAt(0).toUpperCase() + type.slice(1);
+                    }
+                  };
                   return (
                     <View key={i} style={styles.noticeItem}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                         <Ionicons name={getNotificationIcon(n.type)} size={16} color={getNotificationColor(n.type)} />
                         <Text style={[styles.noticeTime, { color: getNotificationColor(n.type), fontWeight: '600' }]}>
-                          {n.type?.toUpperCase() || 'NOTIFICATION'}
+                          {formatNotificationType(n.type)}
                         </Text>
                         <Text style={styles.noticeTime}>{new Date(n.at||Date.now()).toLocaleTimeString()}</Text>
                       </View>
@@ -2083,11 +2094,25 @@ export default function AdminDashboard() {
                     default: return '#64748b';
                   }
                 };
+                const formatNotificationType = (type) => {
+                  if (!type) return 'Notification';
+                  switch(type) {
+                    case 'noPing': return 'No Ping';
+                    case 'locationOff': return 'Location Off';
+                    case 'helpRequest': return 'Help Request';
+                    case 'online': return 'Online';
+                    case 'offline': return 'Offline';
+                    default: return type.charAt(0).toUpperCase() + type.slice(1);
+                  }
+                };
                 return (
                   <View key={i} style={styles.tableRow}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 2 }}>
                       <Ionicons name={getNotificationIcon(n.type)} size={18} color={getNotificationColor(n.type)} />
-                      <Text style={[styles.td,{flex:1}]}>{new Date(n.at||Date.now()).toLocaleString()}</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.td, { color: getNotificationColor(n.type), fontWeight: '600', fontSize: 12 }]}>{formatNotificationType(n.type)}</Text>
+                        <Text style={[styles.td,{fontSize: 12}]}>{new Date(n.at||Date.now()).toLocaleString()}</Text>
+                      </View>
                     </View>
                     <Text style={[styles.td,{flex:2}]}>{n.studentName} ({n.regNo})</Text>
                     <Text style={[styles.td,{flex:3}]}>{n.message}</Text>
@@ -2686,13 +2711,11 @@ const styles = StyleSheet.create({
   exportButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+    backgroundColor: '#059669',
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 8,
     gap: 6,
-    borderWidth: 1,
-    borderColor: '#10b981',
   },
   exportButtonText: {
     color: '#000',
