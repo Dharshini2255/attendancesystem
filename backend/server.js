@@ -223,11 +223,21 @@ app.post('/attendance/mark', async (req, res) => {
     const proximityAnchor = settings?.proximityLocation;
     const proximityRadius = Number(settings?.proximityRadiusMeters || 100);
 
-    const MAX_RADIUS_METERS = parseInt(process.env.MAX_RADIUS_METERS || '50000', 10); // campus radius
+    // Validate location is provided
+    if (!location || typeof location.latitude !== 'number' || typeof location.longitude !== 'number' || 
+        isNaN(location.latitude) || isNaN(location.longitude)) {
+      return res.status(400).json({ error: "Valid location is required. Attendance not marked." });
+    }
+
+    const MAX_RADIUS_METERS = parseInt(process.env.MAX_RADIUS_METERS || '500', 10); // Default to 500m instead of 50km
 
     const toRad = (value) => (value * Math.PI) / 180;
     const R = 6371000;
     const distanceMeters = (a, b) => {
+      if (!a || !b || typeof a.latitude !== 'number' || typeof a.longitude !== 'number' ||
+          typeof b.latitude !== 'number' || typeof b.longitude !== 'number') {
+        return Infinity; // Invalid location = infinite distance
+      }
       const dLat = toRad(a.latitude - b.latitude);
       const dLon = toRad(a.longitude - b.longitude);
       const lat1 = toRad(b.latitude);
@@ -238,38 +248,58 @@ app.post('/attendance/mark', async (req, res) => {
 
     // polygon containment if provided
     const pointInPolygon = (pt, poly) => {
+      if (!pt || !poly || !Array.isArray(poly) || poly.length < 3) return false;
       let inside = false;
       for (let i=0,j=poly.length-1; i<poly.length; j=i++) {
         const xi=poly[i].latitude, yi=poly[i].longitude;
         const xj=poly[j].latitude, yj=poly[j].longitude;
+        if (typeof xi !== 'number' || typeof yi !== 'number' || typeof xj !== 'number' || typeof yj !== 'number') continue;
         const intersect = ((yi>pt.longitude)!==(yj>pt.longitude)) && (pt.latitude < (xj - xi) * (pt.longitude - yi) / (yj - yi + 1e-12) + xi);
         if (intersect) inside = !inside;
       }
       return inside;
     };
 
+    // ALWAYS verify location - check college location by default
     let allowedByCollege = false;
-    if (settings?.useCollegeLocation) {
-      if (Array.isArray(settings?.collegePolygon) && settings.collegePolygon.length >= 3) {
-        allowedByCollege = pointInPolygon(location, settings.collegePolygon);
-      } else {
-        allowedByCollege = distanceMeters(location, collegeAnchor) <= MAX_RADIUS_METERS;
-      }
+    // Check college polygon first if available
+    if (Array.isArray(settings?.collegePolygon) && settings.collegePolygon.length >= 3) {
+      allowedByCollege = pointInPolygon(location, settings.collegePolygon);
+    } 
+    // If no polygon, check distance to college location
+    else if (collegeAnchor && typeof collegeAnchor.latitude === 'number' && typeof collegeAnchor.longitude === 'number') {
+      const distance = distanceMeters(location, collegeAnchor);
+      const radiusToUse = settings?.useCollegeLocation !== false ? MAX_RADIUS_METERS : MAX_RADIUS_METERS;
+      allowedByCollege = distance <= radiusToUse;
     }
+
+    // Check proximity anchors (admin's current location or configured anchors)
     let allowedByProximity = false;
-    if (proximityAnchor) {
-      allowedByProximity = distanceMeters(location, proximityAnchor) <= proximityRadius && !!student.loggedIn;
+    if (proximityAnchor && typeof proximityAnchor.latitude === 'number' && typeof proximityAnchor.longitude === 'number') {
+      const distance = distanceMeters(location, proximityAnchor);
+      allowedByProximity = distance <= proximityRadius;
     }
     if (Array.isArray(settings?.proximityAnchors) && settings.proximityAnchors.length) {
       for (const a of settings.proximityAnchors) {
-        if (a?.location?.latitude && a?.location?.longitude) {
+        if (a?.location?.latitude && a?.location?.longitude && 
+            typeof a.location.latitude === 'number' && typeof a.location.longitude === 'number') {
           const r = Number(a.radiusMeters || proximityRadius);
-          if (distanceMeters(location, a.location) <= r) { allowedByProximity = true; break; }
+          const distance = distanceMeters(location, a.location);
+          if (distance <= r) { 
+            allowedByProximity = true; 
+            break; 
+          }
         }
       }
     }
-    if (!(allowedByCollege || allowedByProximity)) {
-      return res.status(403).json({ error: "Outside allowed location. Attendance not marked." });
+
+    // REJECT if location is not valid - must be within college OR proximity area
+    if (!allowedByCollege && !allowedByProximity) {
+      const collegeDist = collegeAnchor ? distanceMeters(location, collegeAnchor) : Infinity;
+      const proximityDist = proximityAnchor ? distanceMeters(location, proximityAnchor) : Infinity;
+      return res.status(403).json({ 
+        error: `Outside allowed location. Distance from college: ${Math.round(collegeDist)}m, from proximity: ${Math.round(proximityDist)}m. Attendance not marked.` 
+      });
     }
 
     const { biometricType, biometricVerified } = req.body || {};
@@ -299,21 +329,38 @@ app.post('/attendance/mark', async (req, res) => {
     });
 
     const validPings = allPings.filter(p => {
-      let byCollege = false;
-      if (settings?.useCollegeLocation) {
-        if (Array.isArray(settings?.collegePolygon) && settings.collegePolygon.length >= 3) {
-          byCollege = pointInPolygon(p.location, settings.collegePolygon);
-        } else {
-          byCollege = distanceMeters(p.location, collegeAnchor) <= MAX_RADIUS_METERS;
-        }
+      // Validate ping location
+      if (!p.location || typeof p.location.latitude !== 'number' || typeof p.location.longitude !== 'number' ||
+          isNaN(p.location.latitude) || isNaN(p.location.longitude)) {
+        return false;
       }
+
+      // ALWAYS check college location
+      let byCollege = false;
+      if (Array.isArray(settings?.collegePolygon) && settings.collegePolygon.length >= 3) {
+        byCollege = pointInPolygon(p.location, settings.collegePolygon);
+      } else if (collegeAnchor && typeof collegeAnchor.latitude === 'number' && typeof collegeAnchor.longitude === 'number') {
+        const distance = distanceMeters(p.location, collegeAnchor);
+        const radiusToUse = settings?.useCollegeLocation !== false ? MAX_RADIUS_METERS : MAX_RADIUS_METERS;
+        byCollege = distance <= radiusToUse;
+      }
+
+      // Check proximity anchors
       let byProx = false;
-      if (proximityAnchor) byProx = distanceMeters(p.location, proximityAnchor) <= proximityRadius && !!student.loggedIn;
+      if (proximityAnchor && typeof proximityAnchor.latitude === 'number' && typeof proximityAnchor.longitude === 'number') {
+        const distance = distanceMeters(p.location, proximityAnchor);
+        byProx = distance <= proximityRadius;
+      }
       if (Array.isArray(settings?.proximityAnchors) && settings.proximityAnchors.length) {
         for (const a of settings.proximityAnchors) {
-          if (a?.location?.latitude && a?.location?.longitude) {
+          if (a?.location?.latitude && a?.location?.longitude && 
+              typeof a.location.latitude === 'number' && typeof a.location.longitude === 'number') {
             const r = Number(a.radiusMeters || proximityRadius);
-            if (distanceMeters(p.location, a.location) <= r) { byProx = true; break; }
+            const distance = distanceMeters(p.location, a.location);
+            if (distance <= r) { 
+              byProx = true; 
+              break; 
+            }
           }
         }
       }
@@ -884,19 +931,73 @@ async function recomputeAttendanceFor(studentId, dateStr) {
   const collegeAnchor = settings?.collegeLocation?.latitude ? settings.collegeLocation : collegeDefault;
   const proximityAnchor = settings?.proximityLocation;
   const proximityRadius = Number(settings?.proximityRadiusMeters || 100);
-  const MAX_RADIUS_METERS = parseInt(process.env.MAX_RADIUS_METERS || '50000', 10);
+  const MAX_RADIUS_METERS = parseInt(process.env.MAX_RADIUS_METERS || '500', 10); // Default to 500m instead of 50km
   const toRad = (v)=> (v*Math.PI)/180; const R=6371000;
-  const dist=(a,b)=>{ const dLat=toRad(a.latitude-b.latitude), dLon=toRad(a.longitude-b.longitude); const lat1=toRad(b.latitude), lat2=toRad(a.latitude); const h=Math.sin(dLat/2)**2+Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2; return 2*R*Math.atan2(Math.sqrt(h),Math.sqrt(1-h)); };
-  const pinPoly=(pt,poly)=>{ if(!poly||poly.length<3) return false; let inside=false; for(let i=0,j=poly.length-1;i<poly.length;j=i++){const xi=poly[i].latitude, yi=poly[i].longitude; const xj=poly[j].latitude, yj=poly[j].longitude; const intersect=((yi>pt.longitude)!==(yj>pt.longitude)) && (pt.latitude < (xj - xi) * (pt.longitude - yi) / (yj - yi + 1e-12) + xi); if(intersect) inside=!inside;} return inside; };
+  const dist=(a,b)=>{ 
+    if (!a || !b || typeof a.latitude !== 'number' || typeof a.longitude !== 'number' ||
+        typeof b.latitude !== 'number' || typeof b.longitude !== 'number') {
+      return Infinity; // Invalid location = infinite distance
+    }
+    const dLat=toRad(a.latitude-b.latitude);
+    const dLon=toRad(a.longitude-b.longitude);
+    const lat1=toRad(b.latitude);
+    const lat2=toRad(a.latitude); 
+    const h=Math.sin(dLat/2)**2+Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2; 
+    return 2*R*Math.atan2(Math.sqrt(h),Math.sqrt(1-h)); 
+  };
+  const pinPoly=(pt,poly)=>{ 
+    if (!pt || !poly || !Array.isArray(poly) || poly.length < 3) return false; 
+    let inside=false; 
+    for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+      const xi=poly[i].latitude, yi=poly[i].longitude; 
+      const xj=poly[j].latitude, yj=poly[j].longitude; 
+      if (typeof xi !== 'number' || typeof yi !== 'number' || typeof xj !== 'number' || typeof yj !== 'number') continue;
+      const intersect=((yi>pt.longitude)!==(yj>pt.longitude)) && (pt.latitude < (xj - xi) * (pt.longitude - yi) / (yj - yi + 1e-12) + xi); 
+      if(intersect) inside=!inside;
+    } 
+    return inside; 
+  };
   const startDate = new Date(`${dateStr}T00:00:00+05:30`);
   const endDate = new Date(`${dateStr}T23:59:59+05:30`);
   const pings = await Ping.find({ studentId, timestamp: { $gte: startDate, $lte: endDate } }).sort({ timestamp: 1 }).lean();
   const per = {}; // period -> valid pings, biometric flag
   for (const p of pings) {
     const loc = { latitude: p.location?.latitude, longitude: p.location?.longitude };
-    let byCollege=false; if (settings?.useCollegeLocation){ byCollege = Array.isArray(settings?.collegePolygon) && settings.collegePolygon.length>=3 ? pinPoly(loc, settings.collegePolygon) : (dist(loc, collegeAnchor)<=MAX_RADIUS_METERS); }
-    let byProx=false; if (proximityAnchor) byProx = dist(loc, proximityAnchor) <= proximityRadius && !!student.loggedIn;
-    if (Array.isArray(settings?.proximityAnchors)) { for (const a of settings.proximityAnchors) { if (a?.location?.latitude && dist(loc,a.location)<= (a.radiusMeters||proximityRadius)) { byProx=true; break; } } }
+    // Validate location
+    if (!loc || typeof loc.latitude !== 'number' || typeof loc.longitude !== 'number' ||
+        isNaN(loc.latitude) || isNaN(loc.longitude)) {
+      continue; // Skip invalid locations
+    }
+    
+    // ALWAYS check college location
+    let byCollege = false;
+    if (Array.isArray(settings?.collegePolygon) && settings.collegePolygon.length >= 3) {
+      byCollege = pinPoly(loc, settings.collegePolygon);
+    } else if (collegeAnchor && typeof collegeAnchor.latitude === 'number' && typeof collegeAnchor.longitude === 'number') {
+      const distance = dist(loc, collegeAnchor);
+      const radiusToUse = settings?.useCollegeLocation !== false ? MAX_RADIUS_METERS : MAX_RADIUS_METERS;
+      byCollege = distance <= radiusToUse;
+    }
+    
+    // Check proximity anchors
+    let byProx = false;
+    if (proximityAnchor && typeof proximityAnchor.latitude === 'number' && typeof proximityAnchor.longitude === 'number') {
+      const distance = dist(loc, proximityAnchor);
+      byProx = distance <= proximityRadius;
+    }
+    if (Array.isArray(settings?.proximityAnchors)) { 
+      for (const a of settings.proximityAnchors) { 
+        if (a?.location?.latitude && a?.location?.longitude && 
+            typeof a.location.latitude === 'number' && typeof a.location.longitude === 'number') {
+          const r = Number(a.radiusMeters || proximityRadius);
+          const distance = dist(loc, a.location);
+          if (distance <= r) { 
+            byProx = true; 
+            break; 
+          }
+        }
+      } 
+    }
     if (!(byCollege || byProx)) continue;
     const k = Number(p.periodNumber)||1;
     if (!per[k]) per[k] = { count:0, biometric:false };

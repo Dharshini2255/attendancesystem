@@ -335,11 +335,20 @@ export default function AdminDashboard() {
     return by;
   }, [onlineUsers]);
 
-  // Visualization controls
-  const [vizType, setVizType] = useState('bar'); // bar | donut | line | pie | histogram | clustered | stacked
-  const [vizCategory, setVizCategory] = useState('class'); // users|departments|year|class|overall
-  const [searchName, setSearchName] = useState('');
-  const [selectedUser, setSelectedUser] = useState(null);
+  // Customizable dashboard visualization controls
+  const [dashboardCharts, setDashboardCharts] = useState([
+    { id: 1, title: 'Overall Attendance', dataSource: 'overall', chartType: 'gauge', enabled: true },
+    { id: 2, title: 'Attendance by Department', dataSource: 'department', chartType: 'donut', enabled: true },
+    { id: 3, title: 'Attendance by Year', dataSource: 'year', chartType: 'pie', enabled: true },
+    { id: 4, title: 'Online Count by Class', dataSource: 'class', chartType: 'clustered', enabled: true },
+    { id: 5, title: 'Attendance by Month', dataSource: 'month', chartType: 'stacked', enabled: true },
+    { id: 6, title: 'Attendance Trend', dataSource: 'time', chartType: 'line', enabled: true },
+    { id: 7, title: 'Attendance Distribution', dataSource: 'distribution', chartType: 'histogram', enabled: true },
+    { id: 8, title: 'Attendance by Class', dataSource: 'class', chartType: 'horizontalBar', enabled: true },
+  ]);
+  const [dashboardDateRange, setDashboardDateRange] = useState({ from: from, to: to });
+  const [showChartConfig, setShowChartConfig] = useState(false);
+  const [editingChart, setEditingChart] = useState(null);
 
   const usersByReg = useMemo(() => { const m = {}; (users||[]).forEach(u => { if (u?.regNo) m[u.regNo] = u; }); return m; }, [users]);
   const recentPings = useMemo(() => (pings||[]).filter(p => {
@@ -407,8 +416,8 @@ export default function AdminDashboard() {
               );
             })}
             <View style={{ width: chartSize * 0.5, height: chartSize * 0.5, borderRadius: chartSize * 0.25, backgroundColor: '#ffffff', justifyContent: 'center', alignItems: 'center', position: 'absolute' }}>
-              <Text style={{ fontSize: 18, fontWeight: '800', color: '#0f172a' }}>{total}</Text>
-              <Text style={{ fontSize: 10, color: '#64748b' }}>Total</Text>
+              <Text style={[{ fontSize: 18, fontWeight: '800', color: '#0f172a' }, textStyle]}>{total}</Text>
+              <Text style={[{ fontSize: 10, color: '#64748b' }, textStyle]}>Total</Text>
             </View>
           </View>
         </View>
@@ -416,7 +425,7 @@ export default function AdminDashboard() {
           {entries.map(([name, val], idx) => (
             <View key={name} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
               <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: palette[idx % palette.length] }} />
-              <Text style={{ fontSize: 11, color: '#0f172a' }}>{name}: {val}</Text>
+              <Text style={[{ fontSize: 11, color: '#0f172a' }, textStyle]}>{name}: {val}</Text>
             </View>
           ))}
         </View>
@@ -438,10 +447,10 @@ export default function AdminDashboard() {
             return (
               <View key={name} style={{ alignItems: 'center' }}>
                 <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: palette[idx % palette.length], opacity: 0.8, justifyContent: 'center', alignItems: 'center' }}>
-                  <Text style={{ fontSize: 14, fontWeight: '800', color: '#fff' }}>{Math.round(percentage)}%</Text>
+                  <Text style={[{ fontSize: 14, fontWeight: '800', color: '#fff' }, textStyle]}>{Math.round(percentage)}%</Text>
                 </View>
-                <Text style={{ fontSize: 11, marginTop: 4, color: '#0f172a', textAlign: 'center' }}>{name}</Text>
-                <Text style={{ fontSize: 10, color: '#64748b' }}>{val}</Text>
+                <Text style={[{ fontSize: 11, marginTop: 4, color: '#0f172a', textAlign: 'center' }, textStyle]}>{name}</Text>
+                <Text style={[{ fontSize: 10, color: '#64748b' }, textStyle]}>{val}</Text>
               </View>
             );
           })}
@@ -480,8 +489,8 @@ export default function AdminDashboard() {
                     <View style={{ width: '50%', height: offlineHeight, backgroundColor: palette[1], borderRadius: 4, minHeight: 4 }} />
                   </View>
                 </View>
-                <Text style={{ fontSize: 10, color: '#0f172a', marginTop: 4, textAlign: 'center' }} numberOfLines={1}>{name}</Text>
-                <Text style={{ fontSize: 9, color: '#64748b' }}>{onlineVal + offlineVal}</Text>
+                <Text style={[{ fontSize: 10, color: '#0f172a', marginTop: 4, textAlign: 'center' }, textStyle]} numberOfLines={1}>{name}</Text>
+                <Text style={[{ fontSize: 9, color: '#64748b' }, textStyle]}>{onlineVal + offlineVal}</Text>
               </View>
             );
           })}
@@ -489,11 +498,11 @@ export default function AdminDashboard() {
         <View style={{ flexDirection: 'row', gap: 12, justifyContent: 'center', marginTop: 8 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
             <View style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: palette[0] }} />
-            <Text style={{ fontSize: 11, color: '#0f172a' }}>Online</Text>
+            <Text style={[{ fontSize: 11, color: '#0f172a' }, textStyle]}>Online</Text>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
             <View style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: palette[1] }} />
-            <Text style={{ fontSize: 11, color: '#0f172a' }}>Offline</Text>
+            <Text style={[{ fontSize: 11, color: '#0f172a' }, textStyle]}>Offline</Text>
           </View>
         </View>
       </View>
@@ -536,7 +545,7 @@ export default function AdminDashboard() {
                   <View style={{ width: '100%', height: presentHeight, backgroundColor: palette[0], borderRadius: 2, minHeight: 2 }} />
                   <View style={{ width: '100%', height: absentHeight, backgroundColor: palette[1], borderRadius: 2, minHeight: 2 }} />
                 </View>
-                <Text style={{ fontSize: 9, color: '#0f172a', marginTop: 4 }}>{monthNames[monthNum] || month.split('-')[1]}</Text>
+                <Text style={[{ fontSize: 9, color: '#0f172a', marginTop: 4 }, textStyle]}>{monthNames[monthNum] || month.split('-')[1]}</Text>
               </View>
             );
           })}
@@ -544,11 +553,11 @@ export default function AdminDashboard() {
         <View style={{ flexDirection: 'row', gap: 12, justifyContent: 'center', marginTop: 8 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
             <View style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: palette[0] }} />
-            <Text style={{ fontSize: 11, color: '#0f172a' }}>Present</Text>
+            <Text style={[{ fontSize: 11, color: '#0f172a' }, textStyle]}>Present</Text>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
             <View style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: palette[1] }} />
-            <Text style={{ fontSize: 11, color: '#0f172a' }}>Absent</Text>
+            <Text style={[{ fontSize: 11, color: '#0f172a' }, textStyle]}>Absent</Text>
           </View>
         </View>
       </View>
@@ -635,7 +644,7 @@ export default function AdminDashboard() {
             )}
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: chartHeight + 8 }}>
               {entries.filter((_, idx) => idx % Math.ceil(entries.length / 5) === 0).map(([date]) => (
-                <Text key={date} style={{ fontSize: 9, color: '#64748b' }}>{date.split('-')[2]}</Text>
+                <Text key={date} style={[{ fontSize: 9, color: '#64748b' }, textStyle]}>{date.split('-')[2]}</Text>
               ))}
             </View>
           </View>
@@ -688,8 +697,8 @@ export default function AdminDashboard() {
           {binCounts.map((count, idx) => (
             <View key={idx} style={{ flex: 1, alignItems: 'center' }}>
               <View style={{ width: '90%', height: (count / max) * chartHeight, backgroundColor: palette[idx % palette.length], borderRadius: 4, minHeight: 4 }} />
-              <Text style={{ fontSize: 9, color: '#0f172a', marginTop: 4 }}>{bins[idx]}-{bins[idx + 1]}%</Text>
-              <Text style={{ fontSize: 10, fontWeight: '700', color: '#0f172a' }}>{count}</Text>
+              <Text style={[{ fontSize: 9, color: '#0f172a', marginTop: 4 }, textStyle]}>{bins[idx]}-{bins[idx + 1]}%</Text>
+              <Text style={[{ fontSize: 10, fontWeight: '700', color: '#0f172a' }, textStyle]}>{count}</Text>
             </View>
           ))}
         </View>
@@ -707,8 +716,8 @@ export default function AdminDashboard() {
         {entries.map(([name, val], idx) => (
           <View key={name} style={{ gap: 4 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={{ fontSize: 12, color: '#0f172a', flex: 1 }} numberOfLines={1}>{name}</Text>
-              <Text style={{ fontSize: 12, fontWeight: '700', color: '#0f172a', marginLeft: 8 }}>{val}</Text>
+              <Text style={[{ fontSize: 12, color: '#0f172a', flex: 1 }, textStyle]} numberOfLines={1}>{name}</Text>
+              <Text style={[{ fontSize: 12, fontWeight: '700', color: '#0f172a', marginLeft: 8 }, textStyle]}>{val}</Text>
             </View>
             <View style={styles.chartBar}>
               <View style={[styles.chartSegment, { width: `${Math.round((val / max) * 100)}%`, backgroundColor: palette[idx % palette.length] }]} />
@@ -761,8 +770,11 @@ export default function AdminDashboard() {
     URL.revokeObjectURL(url);
   };
 
+  // Global text style with Times New Roman
+  const textStyle = { fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' };
+
   if (!authorized) {
-    return <View style={[styles.fill, styles.bg]}><Text style={{ color: '#1f2937' }}>Checking admin access…</Text></View>;
+    return <View style={[styles.fill, styles.bg]}><Text style={[{ color: '#1f2937' }, textStyle]}>Checking admin access…</Text></View>;
   }
 
   const NavItem = ({ active, label, onPress, big=false }) => (
@@ -827,88 +839,195 @@ export default function AdminDashboard() {
             <Panel style={styles.centerCol}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                 <Text style={styles.panelTitle}>Attendance Analytics Overview</Text>
-                {Platform.OS === 'web' && (
-                  <TouchableOpacity onPress={exportDashboardData} style={styles.exportButton}>
-                    <Ionicons name="download-outline" size={16} color="#fff" />
-                    <Text style={styles.exportButtonText}>Export Dashboard</Text>
+                <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                  <TouchableOpacity onPress={() => setShowChartConfig(!showChartConfig)} style={[styles.secondaryBtn, { marginTop: 0 }]}>
+                    <Ionicons name="settings-outline" size={16} color="#0f172a" />
+                    <Text style={styles.secondaryBtnText}>Configure</Text>
                   </TouchableOpacity>
-                )}
+                  {Platform.OS === 'web' && (
+                    <TouchableOpacity onPress={exportDashboardData} style={styles.exportButton}>
+                      <Ionicons name="download-outline" size={16} color="#fff" />
+                      <Text style={styles.exportButtonText}>Export</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               </View>
+
+              {/* Configuration Panel */}
+              {showChartConfig && (
+                <View style={[styles.chartCard, { marginBottom: 16, backgroundColor: '#f8fafc' }]}>
+                  <Text style={styles.chartTitle}>Dashboard Configuration</Text>
+                  <View style={{ gap: 12 }}>
+                    <View>
+                      <Text style={styles.muted}>Date Range</Text>
+                      <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+                        {Platform.OS === 'web' ? (
+                          <>
+                            <input type="date" value={dashboardDateRange.from} onChange={e => setDashboardDateRange({ ...dashboardDateRange, from: e.target.value })} style={styles.webInput} />
+                            <input type="date" value={dashboardDateRange.to} onChange={e => setDashboardDateRange({ ...dashboardDateRange, to: e.target.value })} style={styles.webInput} />
+                          </>
+                        ) : (
+                          <>
+                            <TextInput value={dashboardDateRange.from} onChangeText={t => setDashboardDateRange({ ...dashboardDateRange, from: t })} style={styles.input} placeholder="From" />
+                            <TextInput value={dashboardDateRange.to} onChangeText={t => setDashboardDateRange({ ...dashboardDateRange, to: t })} style={styles.input} placeholder="To" />
+                          </>
+                        )}
+                        <TouchableOpacity onPress={() => { setFrom(dashboardDateRange.from); setTo(dashboardDateRange.to); loadAttendance(); }} style={styles.primaryBtn}>
+                          <Text style={styles.primaryBtnText}>Apply</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                    <View>
+                      <Text style={styles.muted}>Charts</Text>
+                      <View style={{ gap: 8, marginTop: 4 }}>
+                        {dashboardCharts.map((chart, idx) => (
+                          <View key={chart.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 8, backgroundColor: '#fff', borderRadius: 8 }}>
+                            <Switch value={chart.enabled} onValueChange={(val) => {
+                              const updated = [...dashboardCharts];
+                              updated[idx].enabled = val;
+                              setDashboardCharts(updated);
+                            }} />
+                            {Platform.OS === 'web' ? (
+                              <input value={chart.title} onChange={e => {
+                                const updated = [...dashboardCharts];
+                                updated[idx].title = e.target.value;
+                                setDashboardCharts(updated);
+                              }} style={{ ...styles.webInput, flex: 1, marginTop: 0 }} />
+                            ) : (
+                              <TextInput value={chart.title} onChangeText={t => {
+                                const updated = [...dashboardCharts];
+                                updated[idx].title = t;
+                                setDashboardCharts(updated);
+                              }} style={{ ...styles.input, flex: 1 }} />
+                            )}
+                            <View style={{ flexDirection: 'row', gap: 4 }}>
+                              <TouchableOpacity onPress={() => setEditingChart(chart)} style={[styles.segmentBtn, { paddingVertical: 4, paddingHorizontal: 8 }]}>
+                                <Text style={styles.segmentLabel}>Edit</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        ))}
+                        <TouchableOpacity onPress={() => {
+                          const newId = Math.max(...dashboardCharts.map(c => c.id), 0) + 1;
+                          setDashboardCharts([...dashboardCharts, { id: newId, title: 'New Chart', dataSource: 'class', chartType: 'bar', enabled: true }]);
+                        }} style={styles.secondaryBtn}>
+                          <Text style={styles.secondaryBtnText}>+ Add Chart</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+              )}
+
+              {/* Chart Configuration Modal */}
+              {editingChart && (
+                <View style={[styles.chartCard, { marginBottom: 16, backgroundColor: '#f8fafc', position: 'relative' }]}>
+                  <TouchableOpacity onPress={() => setEditingChart(null)} style={{ position: 'absolute', top: 8, right: 8, zIndex: 10 }}>
+                    <Ionicons name="close" size={24} color="#0f172a" />
+                  </TouchableOpacity>
+                  <Text style={styles.chartTitle}>Configure Chart: {editingChart.title}</Text>
+                  <View style={{ gap: 12, marginTop: 8 }}>
+                    <View>
+                      <Text style={styles.muted}>Data Source</Text>
+                      <View style={styles.segmentRow}>
+                        {['overall', 'class', 'department', 'year', 'month', 'time', 'distribution'].map(ds => (
+                          <TouchableOpacity key={ds} onPress={() => {
+                            const updated = dashboardCharts.map(c => c.id === editingChart.id ? { ...c, dataSource: ds } : c);
+                            setDashboardCharts(updated);
+                            setEditingChart({ ...editingChart, dataSource: ds });
+                          }} style={[styles.segmentBtn, editingChart.dataSource === ds && styles.segmentActive]}>
+                            <Text style={styles.segmentLabel}>{ds}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </View>
+                    <View>
+                      <Text style={styles.muted}>Chart Type</Text>
+                      <View style={styles.segmentRow}>
+                        {['gauge', 'donut', 'pie', 'bar', 'horizontalBar', 'clustered', 'stacked', 'line', 'histogram'].map(ct => (
+                          <TouchableOpacity key={ct} onPress={() => {
+                            const updated = dashboardCharts.map(c => c.id === editingChart.id ? { ...c, chartType: ct } : c);
+                            setDashboardCharts(updated);
+                            setEditingChart({ ...editingChart, chartType: ct });
+                          }} style={[styles.segmentBtn, editingChart.chartType === ct && styles.segmentActive]}>
+                            <Text style={styles.segmentLabel}>{ct}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </View>
+                    <TouchableOpacity onPress={() => setEditingChart(null)} style={styles.primaryBtn}>
+                      <Text style={styles.primaryBtnText}>Done</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
               <View style={styles.metricsRow}>
                 <View style={styles.metricChip}><Text style={styles.metricNum}>{attendancePercent}%</Text><Text style={styles.metricLabel}>Overall Attendance</Text></View>
                 <View style={styles.metricChip}><Text style={styles.metricNum}>{users?.length||0}</Text><Text style={styles.metricLabel}>Total Students</Text></View>
                 <View style={styles.metricChip}><Text style={styles.metricNum}>{metrics.activeStudents}</Text><Text style={styles.metricLabel}>Online Now</Text></View>
                 <View style={styles.metricChip}><Text style={styles.metricNum}>{metrics.biometric}</Text><Text style={styles.metricLabel}>Biometric Pings</Text></View>
               </View>
+
+              {/* Dynamic Charts Grid */}
               <View style={{ gap: 16 }}>
-                {/* First Row: KPI Cards and Donut Chart */}
-                <View style={{ flexDirection:'row', gap:12, flexWrap:'wrap' }}>
-                  {/* Overall Attendance KPI */}
-                  <View style={[styles.chartCard, { flex:1, minWidth:200 }]}>
-                    <Text style={styles.chartTitle}>Overall Attendance</Text>
-                    <View style={[styles.gaugeCircle, { borderColor: attendancePercent>=75?'#10b981':(attendancePercent>=50?'#f59e0b':'#ef4444') }]}>
-                      <Text style={styles.gaugeText}>{attendancePercent}%</Text>
+                {dashboardCharts.filter(c => c.enabled).map((chart, idx) => {
+                  const getChartData = () => {
+                    switch(chart.dataSource) {
+                      case 'overall': return { Online: (sessions?.loggedIn?.length||0), Offline: Math.max(0, (users||[]).length - (sessions?.loggedIn?.length||0)) };
+                      case 'class': return groupOnlineBy.class;
+                      case 'department': return groupOnlineBy.department;
+                      case 'year': return groupOnlineBy.year;
+                      case 'month': return attRows;
+                      case 'time': return attRows;
+                      case 'distribution': return attRows;
+                      default: return groupOnlineBy.class;
+                    }
+                  };
+
+                  const renderChart = () => {
+                    const data = getChartData();
+                    switch(chart.chartType) {
+                      case 'gauge': return (
+                        <View style={{ alignItems: 'center' }}>
+                          <View style={[styles.gaugeCircle, { borderColor: attendancePercent>=75?'#10b981':(attendancePercent>=50?'#f59e0b':'#ef4444') }]}>
+                            <Text style={styles.gaugeText}>{attendancePercent}%</Text>
+                          </View>
+                          <Text style={styles.muted}>{(sessions?.loggedIn?.length||0)} / {(users||[]).length} users</Text>
+                        </View>
+                      );
+                      case 'donut': return renderDonutChart(data, chart.dataSource);
+                      case 'pie': return renderPieChart(data);
+                      case 'bar': return renderHorizontalBarChart(data);
+                      case 'horizontalBar': return renderHorizontalBarChart(data);
+                      case 'clustered': return renderClusteredBarChart(data, users);
+                      case 'stacked': return renderStackedBarChart(data);
+                      case 'line': return renderLineChart(data);
+                      case 'histogram': return renderHistogram(data);
+                      default: return renderHorizontalBarChart(data);
+                    }
+                  };
+
+                  return (
+                    <View key={chart.id} style={[styles.chartCard, { flex: idx % 3 === 0 ? 2 : 1, minWidth: chart.chartType === 'gauge' ? 200 : 300 }]}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                        <Text style={styles.chartTitle}>{chart.title}</Text>
+                        <TouchableOpacity onPress={() => {
+                          const updated = dashboardCharts.filter(c => c.id !== chart.id);
+                          setDashboardCharts(updated);
+                        }}>
+                          <Ionicons name="close-outline" size={18} color="#64748b" />
+                        </TouchableOpacity>
+                      </View>
+                      {renderChart()}
                     </View>
-                    <Text style={styles.muted}>{(sessions?.loggedIn?.length||0)} / {(users||[]).length} users</Text>
+                  );
+                })}
+                {dashboardCharts.filter(c => c.enabled).length === 0 && (
+                  <View style={[styles.chartCard, { alignItems: 'center', padding: 40 }]}>
+                    <Text style={styles.muted}>No charts enabled. Click "Configure" to add charts.</Text>
                   </View>
-
-                  {/* Attendance by Region - Donut Chart */}
-                  <View style={[styles.chartCard, { flex:1, minWidth:250 }]}>
-                    <Text style={styles.chartTitle}>Attendance by Department</Text>
-                    {renderDonutChart(groupOnlineBy.department, 'department')}
-                  </View>
-
-                  {/* Attendance by Year - Pie Chart */}
-                  <View style={[styles.chartCard, { flex:1, minWidth:250 }]}>
-                    <Text style={styles.chartTitle}>Attendance by Year</Text>
-                    {renderPieChart(groupOnlineBy.year)}
-                  </View>
-                </View>
-
-                {/* Second Row: Clustered and Stacked Charts */}
-                <View style={{ flexDirection:'row', gap:12, flexWrap:'wrap' }}>
-                  {/* Online by Class - Clustered Bar Chart */}
-                  <View style={[styles.chartCard, { flex:2, minWidth:400 }]}>
-                    <Text style={styles.chartTitle}>Online Count by Class, Status</Text>
-                    {renderClusteredBarChart(groupOnlineBy.class, users)}
-                  </View>
-
-                  {/* Attendance by Month - Stacked Column Chart */}
-                  <View style={[styles.chartCard, { flex:2, minWidth:400 }]}>
-                    <Text style={styles.chartTitle}>Attendance by Month, Status</Text>
-                    {renderStackedBarChart(attRows)}
-                  </View>
-                </View>
-
-                {/* Third Row: Line Chart and Histogram */}
-                <View style={{ flexDirection:'row', gap:12, flexWrap:'wrap' }}>
-                  {/* Attendance Trend - Line Chart */}
-                  <View style={[styles.chartCard, { flex:2, minWidth:400 }]}>
-                    <Text style={styles.chartTitle}>Attendance Trend Over Time</Text>
-                    {renderLineChart(attRows)}
-                  </View>
-
-                  {/* Attendance Distribution - Histogram */}
-                  <View style={[styles.chartCard, { flex:1, minWidth:300 }]}>
-                    <Text style={styles.chartTitle}>Attendance Distribution</Text>
-                    {renderHistogram(attRows)}
-                  </View>
-                </View>
-
-                {/* Fourth Row: Horizontal Bar Charts */}
-                <View style={{ flexDirection:'row', gap:12, flexWrap:'wrap' }}>
-                  {/* Attendance by Class - Horizontal Bar */}
-                  <View style={[styles.chartCard, { flex:2, minWidth:400 }]}>
-                    <Text style={styles.chartTitle}>Attendance by Class</Text>
-                    {renderHorizontalBarChart(groupOnlineBy.class)}
-                  </View>
-
-                  {/* Attendance by Department - Horizontal Bar */}
-                  <View style={[styles.chartCard, { flex:1, minWidth:300 }]}>
-                    <Text style={styles.chartTitle}>Attendance by Department</Text>
-                    {renderHorizontalBarChart(groupOnlineBy.department)}
-                  </View>
-                </View>
+                )}
               </View>
             </Panel>
 
@@ -1891,6 +2010,7 @@ const styles = StyleSheet.create({
   bg: Platform.select({
     web: {
       backgroundImage: 'linear-gradient(135deg, #ffffffff 0%, #ffffffff 50%, #ffffffff 100%)',
+      fontFamily: 'Times New Roman, Times, serif',
     },
     default: { backgroundColor: '#ffffffff' },
   }),
@@ -1906,14 +2026,14 @@ const styles = StyleSheet.create({
     borderBottomColor: '#e2e8f0',
     ...Platform.select({ default: { elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowOffset: { width: 0, height: 2 }, shadowRadius: 4 } })
   },
-  brand: { fontSize: 20, fontWeight: '800', color: '#010101ff' },
+  brand: { fontSize: 20, fontWeight: '800', color: '#010101ff', fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
   navRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 18, flexWrap: 'wrap' },
   navRowSmall: { flexDirection:'row', flexWrap:'wrap', gap: 12 },
   navRowMobile: { flexDirection:'row', alignItems:'flex-end', gap: 16, paddingVertical: 4 },
   navTab: { alignItems: 'center', paddingHorizontal: 6 },
   navTabBig: { width: '100%', alignItems:'flex-start' },
-  navTabText: { color: '#000000ff', fontWeight: '800', fontSize: 14 },
-  navTabTextActive: { color: '#000000ff' },
+  navTabText: { color: '#000000ff', fontWeight: '800', fontSize: 14, fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
+  navTabTextActive: { color: '#000000ff', fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
   navUnderline: { height: 2, width: '100%', backgroundColor: 'transparent', marginTop: 4, borderRadius: 9999 },
   navUnderlineActive: { backgroundColor: '#000000ff' },
   logout: { flexDirection:'row', alignItems:'center', gap:6, paddingVertical:4, paddingHorizontal:6, borderRadius:6 },
@@ -1963,15 +2083,15 @@ const styles = StyleSheet.create({
 
   contentBox: { padding: 12 },
 
-  panelTitle: { fontSize: 16, fontWeight: '800', color: '#000000ff', marginBottom: 10 },
-  muted: { color: '#526581ff' },
-  value: { color: '#0f172a', fontWeight: '700' },
+  panelTitle: { fontSize: 16, fontWeight: '800', color: '#000000ff', marginBottom: 10, fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
+  muted: { color: '#526581ff', fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
+  value: { color: '#0f172a', fontWeight: '700', fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
   rowBetween: { flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginTop: 4 },
   primaryBtn: { marginTop: 12, backgroundColor: '#0a0a0aff', paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
-  primaryBtnText: { color: '#fcfdffff', fontWeight: '800' },
+  primaryBtnText: { color: '#fcfdffff', fontWeight: '800', fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
   secondaryBtn: { backgroundColor: 'rgba(96,165,250,0.15)', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 8, marginTop: 6 },
-  secondaryBtnText: { color: '#000000ff', fontWeight: '700' },
-  link: { color: '#000000ff', fontWeight: '700', textDecorationLine: 'underline' },
+  secondaryBtnText: { color: '#000000ff', fontWeight: '700', fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
+  link: { color: '#000000ff', fontWeight: '700', textDecorationLine: 'underline', fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
 
   mapWrap: { height: 200, borderRadius: 12, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.6)', position: 'relative' },
   legendRow: { flexDirection:'row', alignItems:'center', gap:8, marginTop: 8, flexWrap:'wrap' },
@@ -1980,34 +2100,34 @@ const styles = StyleSheet.create({
 
   metricsRow: { flexDirection:'row', gap: 10, flexWrap:'wrap', marginBottom: 10 },
   metricChip: { paddingVertical:8, paddingHorizontal:12, backgroundColor:'rgba(255,255,255,0.7)', borderRadius: 9999 },
-  metricNum: { fontWeight:'800', color:'#6c6d6fff' },
-  metricLabel: { color:'#475569' },
+  metricNum: { fontWeight:'800', color:'#6c6d6fff', fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
+  metricLabel: { color:'#475569', fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
 
   noticeItem: { padding: 10, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.7)' },
-  noticeTime: { fontSize: 12, color: '#64748b', marginBottom: 4 },
-  noticeMsg: { color: '#0f172a' },
+  noticeTime: { fontSize: 12, color: '#64748b', marginBottom: 4, fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
+  noticeMsg: { color: '#0f172a', fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
 
   analyticsRow: { flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginTop: 12 },
   gaugeWrap: { alignItems:'center', justifyContent:'center' },
   gaugeCircle: { width: 80, height: 80, borderRadius: 40, borderWidth: 8, borderColor: '#60a5fa', alignItems:'center', justifyContent:'center', backgroundColor:'rgba(255,255,255,0.6)' },
-  gaugeText: { fontWeight:'800', color:'#0f172a' },
+  gaugeText: { fontWeight:'800', color:'#0f172a', fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
   donutRow: { flexDirection:'row', gap: 12 },
   donut: { width: 40, height: 40, borderRadius: 20, borderWidth: 6, backgroundColor:'transparent' },
 
   segmentRow: { flexDirection:'row', gap: 8, flexWrap:'wrap' },
   segmentBtn: { paddingVertical:6, paddingHorizontal:12, borderRadius: 9999, backgroundColor:'rgba(255,255,255,0.6)' },
   segmentActive: { backgroundColor:'rgba(139, 129, 129, 0.9)' },
-  segmentLabel: { color:'#0f172a', fontWeight:'700' },
+  segmentLabel: { color:'#0f172a', fontWeight:'700', fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
 
-  input: { padding: 10, backgroundColor:'rgba(255,255,255,0.8)', borderRadius: 10, color:'#0f172a' },
-  webInput: { padding: 10, background: 'rgba(255, 255, 255, 1)', borderRadius: 10, border: '1px solid rgba(148,163,184,0.35)' },
+  input: { padding: 10, backgroundColor:'rgba(255,255,255,0.8)', borderRadius: 10, color:'#0f172a', fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
+  webInput: { padding: 10, background: 'rgba(255, 255, 255, 1)', borderRadius: 10, border: '1px solid rgba(148,163,184,0.35)', fontFamily: 'Times New Roman, Times, serif' },
 
   // Table styles
   table: { width:'100%', borderRadius: 12, overflow:'hidden', ...Platform.select({ web: { border: '1px solid rgba(148,163,184,0.35)' }, default: {} }) },
   tableHeader: { flexDirection:'row', backgroundColor:'rgba(255,255,255,0.8)', paddingVertical:12, paddingHorizontal:16 },
   tableRow: { flexDirection:'row', backgroundColor:'rgba(255,255,255,0.6)', paddingVertical:12, paddingHorizontal:16, borderBottomWidth: Platform.OS==='web'?0:StyleSheet.hairlineWidth, borderBottomColor: 'rgba(148,163,184,0.25)' },
-  th: { color:'#334155', fontWeight:'800' },
-  td: { color:'#0f172a' },
+  th: { color:'#334155', fontWeight:'800', fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
+  td: { color:'#0f172a', fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
 
   // Sidebar (filters)
   backdrop: Platform.select({ web: { position:'fixed', top:0, left:0, right:0, bottom:0, backgroundColor:'rgba(15,23,42,0.4)', zIndex:1000 }, default: { position:'absolute', top:0, left:0, right:0, bottom:0, backgroundColor:'rgba(15,23,42,0.4)', zIndex:1000 } }),
@@ -2026,10 +2146,10 @@ const styles = StyleSheet.create({
   select: { width:'100%', padding:8, border:'1px solid #d1d5db', borderRadius:4, marginBottom:8 },
   textInput: { width:'100%', padding:8, border:'1px solid #d1d5db', borderRadius:4, marginBottom:8 },
   hint: { fontSize:12, color:'#6b7280', marginTop:4 },
-  chartTitle: { fontSize:14, fontWeight:'700', color:'#0f172a', marginBottom:12 },
+  chartTitle: { fontSize:14, fontWeight:'700', color:'#0f172a', marginBottom:12, fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
   chartBar: { height:20, flexDirection:'row', backgroundColor:'rgba(148,163,184,0.25)', borderRadius:4, overflow:'hidden', marginBottom:4 },
   chartSegment: { height:'100%' },
-  chartLabel: { fontSize:12, color:'#475569' },
+  chartLabel: { fontSize:12, color:'#475569', fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
 
   // History modal styles
   histBackdrop: { position:'fixed', top:0, left:0, right:0, bottom:0, backgroundColor:'rgba(0,0,0,0.5)', zIndex:2000, alignItems:'center', justifyContent:'center' },
@@ -2049,5 +2169,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: '600',
+    fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times',
   },
 });
