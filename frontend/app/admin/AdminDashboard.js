@@ -152,7 +152,7 @@ export default function AdminDashboard() {
         return;
       }
       const data = await res.json();
-      
+     
       if (useToday) {
         // For dashboard, only update locations, don't replace all pings
         const locations = {};
@@ -244,14 +244,14 @@ export default function AdminDashboard() {
   };
 
   const readSettings = async () => {
-    try { 
-      const res = await fetch(apiUrl('/admin/settings')); 
+    try {
+      const res = await fetch(apiUrl('/admin/settings'));
       if (!res.ok) {
         console.error('Failed to load settings:', res.status, res.statusText);
         return;
       }
-      const data = await res.json(); 
-      setSettings(prev => ({ ...prev, ...data })); 
+      const data = await res.json();
+      setSettings(prev => ({ ...prev, ...data }));
       console.log('Loaded settings:', data);
     } catch (err) {
       console.error('Error loading settings:', err);
@@ -259,8 +259,8 @@ export default function AdminDashboard() {
   };
 
   const saveSettings = async () => {
-    try { 
-      const res = await fetch(apiUrl('/admin/settings'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) }); 
+    try {
+      const res = await fetch(apiUrl('/admin/settings'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) });
       if (!res.ok) {
         console.error('Failed to save settings:', res.status, res.statusText);
         Alert.alert('Error', 'Failed to save settings');
@@ -274,15 +274,15 @@ export default function AdminDashboard() {
   };
 
   const loadNotifications = async () => {
-    try { 
-      const res = await fetch(apiUrl('/admin/notifications')); 
+    try {
+      const res = await fetch(apiUrl('/admin/notifications'));
       if (!res.ok) {
         console.error('Failed to load notifications:', res.status, res.statusText);
         setNotifications([]);
         return;
       }
-      const data = await res.json(); 
-      setNotifications(data.alerts || []); 
+      const data = await res.json();
+      setNotifications(data.alerts || []);
       console.log('Loaded notifications:', data.alerts?.length || 0);
     } catch (err) {
       console.error('Error loading notifications:', err);
@@ -336,7 +336,7 @@ export default function AdminDashboard() {
   }, [onlineUsers]);
 
   // Visualization controls
-  const [vizType, setVizType] = useState('bar'); // bar | donut
+  const [vizType, setVizType] = useState('bar'); // bar | donut | line | pie | histogram | clustered | stacked
   const [vizCategory, setVizCategory] = useState('class'); // users|departments|year|class|overall
   const [searchName, setSearchName] = useState('');
   const [selectedUser, setSelectedUser] = useState(null);
@@ -370,6 +370,396 @@ export default function AdminDashboard() {
     const vals = Array.from(new Set((users||[]).map(u=>u.class).filter(Boolean)));
     return vals.length ? vals : ['CSE-A','CSE-B','CSE-C','CSE-D','CSE-E'];
   }, [users, settings.department]);
+
+  // Chart rendering functions
+  const palette = ['#14b8a6', '#ef4444', '#fbbf24', '#1f2937', '#8b5cf6', '#22d3ee', '#84cc16', '#fb7185'];
+ 
+  const renderDonutChart = (data, label) => {
+    const entries = Object.entries(data);
+    if (entries.length === 0) return <Text style={styles.muted}>No data</Text>;
+    const total = entries.reduce((s, [, v]) => s + v, 0);
+    if (total === 0) return <Text style={styles.muted}>No data</Text>;
+   
+    const chartSize = 120;
+    const maxEntry = Math.max(...entries.map(([, v]) => v));
+   
+    return (
+      <View style={{ alignItems: 'center', gap: 8 }}>
+        <View style={{ width: chartSize, height: chartSize, position: 'relative', justifyContent: 'center', alignItems: 'center' }}>
+          {/* Donut visualization using circular segments */}
+          <View style={{ width: chartSize, height: chartSize, borderRadius: chartSize / 2, backgroundColor: '#e5e7eb', justifyContent: 'center', alignItems: 'center', position: 'relative' }}>
+            {entries.map(([name, val], idx) => {
+              const percentage = (val / total) * 100;
+              const borderWidth = Math.max(8, (val / maxEntry) * 20);
+              return (
+                <View
+                  key={name}
+                  style={{
+                    position: 'absolute',
+                    width: chartSize - (idx * 8),
+                    height: chartSize - (idx * 8),
+                    borderRadius: (chartSize - (idx * 8)) / 2,
+                    borderWidth: borderWidth,
+                    borderColor: palette[idx % palette.length],
+                    opacity: 0.8,
+                  }}
+                />
+              );
+            })}
+            <View style={{ width: chartSize * 0.5, height: chartSize * 0.5, borderRadius: chartSize * 0.25, backgroundColor: '#ffffff', justifyContent: 'center', alignItems: 'center', position: 'absolute' }}>
+              <Text style={{ fontSize: 18, fontWeight: '800', color: '#0f172a' }}>{total}</Text>
+              <Text style={{ fontSize: 10, color: '#64748b' }}>Total</Text>
+            </View>
+          </View>
+        </View>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
+          {entries.map(([name, val], idx) => (
+            <View key={name} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: palette[idx % palette.length] }} />
+              <Text style={{ fontSize: 11, color: '#0f172a' }}>{name}: {val}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+    );
+  };
+
+  const renderPieChart = (data) => {
+    const entries = Object.entries(data);
+    if (entries.length === 0) return <Text style={styles.muted}>No data</Text>;
+    const total = entries.reduce((s, [, v]) => s + v, 0);
+    if (total === 0) return <Text style={styles.muted}>No data</Text>;
+   
+    return (
+      <View style={{ gap: 8 }}>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'center' }}>
+          {entries.map(([name, val], idx) => {
+            const percentage = (val / total) * 100;
+            return (
+              <View key={name} style={{ alignItems: 'center' }}>
+                <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: palette[idx % palette.length], opacity: 0.8, justifyContent: 'center', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 14, fontWeight: '800', color: '#fff' }}>{Math.round(percentage)}%</Text>
+                </View>
+                <Text style={{ fontSize: 11, marginTop: 4, color: '#0f172a', textAlign: 'center' }}>{name}</Text>
+                <Text style={{ fontSize: 10, color: '#64748b' }}>{val}</Text>
+              </View>
+            );
+          })}
+        </View>
+      </View>
+    );
+  };
+
+  const renderClusteredBarChart = (data, allUsers) => {
+    const entries = Object.entries(data);
+    if (entries.length === 0) return <Text style={styles.muted}>No data</Text>;
+    const max = Math.max(1, ...entries.map(([, v]) => v));
+    const chartHeight = 200;
+   
+    // Calculate offline counts
+    const offlineData = {};
+    entries.forEach(([key]) => {
+      const classUsers = (allUsers || []).filter(u => (u.class || u.className) === key);
+      offlineData[key] = classUsers.filter(u => !u.loggedIn).length;
+    });
+    const maxOffline = Math.max(1, ...Object.values(offlineData));
+    const maxTotal = Math.max(max, maxOffline);
+   
+    return (
+      <View style={{ gap: 8 }}>
+        <View style={{ flexDirection: 'row', gap: 4, alignItems: 'flex-end', height: chartHeight, paddingHorizontal: 8 }}>
+          {entries.map(([name, onlineVal], idx) => {
+            const offlineVal = offlineData[name] || 0;
+            const onlineHeight = (onlineVal / maxTotal) * chartHeight;
+            const offlineHeight = (offlineVal / maxTotal) * chartHeight;
+            return (
+              <View key={name} style={{ flex: 1, alignItems: 'center', gap: 2 }}>
+                <View style={{ width: '100%', alignItems: 'center', justifyContent: 'flex-end' }}>
+                  <View style={{ width: '80%', flexDirection: 'row', gap: 2, alignItems: 'flex-end' }}>
+                    <View style={{ width: '50%', height: onlineHeight, backgroundColor: palette[0], borderRadius: 4, minHeight: 4 }} />
+                    <View style={{ width: '50%', height: offlineHeight, backgroundColor: palette[1], borderRadius: 4, minHeight: 4 }} />
+                  </View>
+                </View>
+                <Text style={{ fontSize: 10, color: '#0f172a', marginTop: 4, textAlign: 'center' }} numberOfLines={1}>{name}</Text>
+                <Text style={{ fontSize: 9, color: '#64748b' }}>{onlineVal + offlineVal}</Text>
+              </View>
+            );
+          })}
+        </View>
+        <View style={{ flexDirection: 'row', gap: 12, justifyContent: 'center', marginTop: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <View style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: palette[0] }} />
+            <Text style={{ fontSize: 11, color: '#0f172a' }}>Online</Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <View style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: palette[1] }} />
+            <Text style={{ fontSize: 11, color: '#0f172a' }}>Offline</Text>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
+  const renderStackedBarChart = (attRows) => {
+    // Group by month
+    const byMonth = {};
+    (attRows || []).forEach(r => {
+      const date = r.date || r.bucket;
+      if (!date) return;
+      const month = date.substring(0, 7); // YYYY-MM
+      if (!byMonth[month]) byMonth[month] = { present: 0, absent: 0 };
+      if (r.status === 'present') byMonth[month].present += 1;
+      else if (r.status === 'absent') byMonth[month].absent += 1;
+      else {
+        byMonth[month].present += (r.present || 0);
+        byMonth[month].absent += (r.absent || 0);
+      }
+    });
+   
+    const entries = Object.entries(byMonth).sort();
+    if (entries.length === 0) return <Text style={styles.muted}>No data</Text>;
+   
+    const max = Math.max(1, ...entries.map(([, v]) => v.present + v.absent));
+    const chartHeight = 200;
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+   
+    return (
+      <View style={{ gap: 8 }}>
+        <View style={{ flexDirection: 'row', gap: 4, alignItems: 'flex-end', height: chartHeight, paddingHorizontal: 8 }}>
+          {entries.slice(-12).map(([month, data]) => {
+            const presentHeight = ((data.present / max) * chartHeight);
+            const absentHeight = ((data.absent / max) * chartHeight);
+            const monthNum = parseInt(month.split('-')[1]) - 1;
+            return (
+              <View key={month} style={{ flex: 1, alignItems: 'center' }}>
+                <View style={{ width: '100%', height: chartHeight, flexDirection: 'column-reverse', gap: 1 }}>
+                  <View style={{ width: '100%', height: presentHeight, backgroundColor: palette[0], borderRadius: 2, minHeight: 2 }} />
+                  <View style={{ width: '100%', height: absentHeight, backgroundColor: palette[1], borderRadius: 2, minHeight: 2 }} />
+                </View>
+                <Text style={{ fontSize: 9, color: '#0f172a', marginTop: 4 }}>{monthNames[monthNum] || month.split('-')[1]}</Text>
+              </View>
+            );
+          })}
+        </View>
+        <View style={{ flexDirection: 'row', gap: 12, justifyContent: 'center', marginTop: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <View style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: palette[0] }} />
+            <Text style={{ fontSize: 11, color: '#0f172a' }}>Present</Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <View style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: palette[1] }} />
+            <Text style={{ fontSize: 11, color: '#0f172a' }}>Absent</Text>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
+  const renderLineChart = (attRows) => {
+    // Group by date
+    const byDate = {};
+    (attRows || []).forEach(r => {
+      const date = r.date || r.bucket;
+      if (!date) return;
+      if (!byDate[date]) byDate[date] = { present: 0, absent: 0 };
+      if (r.status === 'present') byDate[date].present += 1;
+      else if (r.status === 'absent') byDate[date].absent += 1;
+      else {
+        byDate[date].present += (r.present || 0);
+        byDate[date].absent += (r.absent || 0);
+      }
+    });
+   
+    const entries = Object.entries(byDate).sort().slice(-30); // Last 30 days
+    if (entries.length === 0) return <Text style={styles.muted}>No data</Text>;
+   
+    const max = Math.max(1, ...entries.map(([, v]) => v.present + v.absent));
+    const chartHeight = 200;
+    const chartWidth = entries.length * 8;
+   
+    return (
+      <View style={{ gap: 8 }}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <View style={{ width: Math.max(chartWidth, 400), height: chartHeight, position: 'relative', paddingHorizontal: 8 }}>
+            {Platform.OS === 'web' ? (
+              <View style={{ width: Math.max(chartWidth, 400), height: chartHeight, position: 'relative' }}>
+                {/* Grid lines using View components */}
+                {[0, 0.25, 0.5, 0.75, 1].map((ratio) => (
+                  <View
+                    key={ratio}
+                    style={{
+                      position: 'absolute',
+                      left: 0,
+                      right: 0,
+                      top: chartHeight * ratio,
+                      height: 1,
+                      backgroundColor: '#e5e7eb',
+                    }}
+                  />
+                ))}
+                {/* Line chart using View components for simplicity */}
+                <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }}>
+                  {entries.map(([date, data], idx) => {
+                    if (idx === 0) return null;
+                    const prevData = entries[idx - 1][1];
+                    const x1 = (idx - 1) / (entries.length - 1 || 1) * (Math.max(chartWidth, 400) - 16) + 8;
+                    const y1 = chartHeight - ((prevData.present / max) * chartHeight);
+                    const x2 = idx / (entries.length - 1 || 1) * (Math.max(chartWidth, 400) - 16) + 8;
+                    const y2 = chartHeight - ((data.present / max) * chartHeight);
+                    const length = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+                    const angle = Math.atan2(y2 - y1, x2 - x1) * (180 / Math.PI);
+                    return (
+                      <View
+                        key={`present-${idx}`}
+                        style={{
+                          position: 'absolute',
+                          left: x1,
+                          top: y1,
+                          width: length,
+                          height: 2,
+                          backgroundColor: palette[0],
+                          transform: [{ rotate: `${angle}deg` }],
+                          transformOrigin: '0 0',
+                        }}
+                      />
+                    );
+                  })}
+                </View>
+              </View>
+            ) : (
+              <View style={{ flex: 1, justifyContent: 'space-between' }}>
+                {[0, 0.25, 0.5, 0.75, 1].map((ratio) => (
+                  <View key={ratio} style={{ height: 1, backgroundColor: '#e5e7eb', width: '100%' }} />
+                ))}
+              </View>
+            )}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: chartHeight + 8 }}>
+              {entries.filter((_, idx) => idx % Math.ceil(entries.length / 5) === 0).map(([date]) => (
+                <Text key={date} style={{ fontSize: 9, color: '#64748b' }}>{date.split('-')[2]}</Text>
+              ))}
+            </View>
+          </View>
+        </ScrollView>
+        <View style={{ flexDirection: 'row', gap: 12, justifyContent: 'center' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <View style={{ width: 12, height: 2, backgroundColor: palette[0] }} />
+            <Text style={{ fontSize: 11, color: '#0f172a' }}>Present</Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <View style={{ width: 12, height: 2, backgroundColor: palette[1] }} />
+            <Text style={{ fontSize: 11, color: '#0f172a' }}>Absent</Text>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
+  const renderHistogram = (attRows) => {
+    // Create bins for attendance percentage
+    const bins = [0, 20, 40, 60, 80, 100];
+    const binCounts = new Array(bins.length - 1).fill(0);
+   
+    // Group by student
+    const byStudent = {};
+    (attRows || []).forEach(r => {
+      const sid = r.studentId;
+      if (!byStudent[sid]) byStudent[sid] = { present: 0, total: 0 };
+      if (r.status === 'present') byStudent[sid].present += 1;
+      byStudent[sid].total += 1;
+    });
+   
+    Object.values(byStudent).forEach(student => {
+      if (student.total === 0) return;
+      const percentage = (student.present / student.total) * 100;
+      for (let i = 0; i < bins.length - 1; i++) {
+        if (percentage >= bins[i] && percentage < bins[i + 1]) {
+          binCounts[i]++;
+          break;
+        }
+      }
+    });
+   
+    const max = Math.max(1, ...binCounts);
+    const chartHeight = 150;
+   
+    return (
+      <View style={{ gap: 8 }}>
+        <View style={{ flexDirection: 'row', gap: 4, alignItems: 'flex-end', height: chartHeight }}>
+          {binCounts.map((count, idx) => (
+            <View key={idx} style={{ flex: 1, alignItems: 'center' }}>
+              <View style={{ width: '90%', height: (count / max) * chartHeight, backgroundColor: palette[idx % palette.length], borderRadius: 4, minHeight: 4 }} />
+              <Text style={{ fontSize: 9, color: '#0f172a', marginTop: 4 }}>{bins[idx]}-{bins[idx + 1]}%</Text>
+              <Text style={{ fontSize: 10, fontWeight: '700', color: '#0f172a' }}>{count}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+    );
+  };
+
+  const renderHorizontalBarChart = (data) => {
+    const entries = Object.entries(data).sort((a, b) => b[1] - a[1]);
+    if (entries.length === 0) return <Text style={styles.muted}>No data</Text>;
+    const max = Math.max(1, ...entries.map(([, v]) => v));
+   
+    return (
+      <View style={{ gap: 8 }}>
+        {entries.map(([name, val], idx) => (
+          <View key={name} style={{ gap: 4 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={{ fontSize: 12, color: '#0f172a', flex: 1 }} numberOfLines={1}>{name}</Text>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: '#0f172a', marginLeft: 8 }}>{val}</Text>
+            </View>
+            <View style={styles.chartBar}>
+              <View style={[styles.chartSegment, { width: `${Math.round((val / max) * 100)}%`, backgroundColor: palette[idx % palette.length] }]} />
+            </View>
+          </View>
+        ))}
+      </View>
+    );
+  };
+
+  const exportDashboardData = () => {
+    if (Platform.OS !== 'web') return;
+   
+    const data = {
+      overallAttendance: attendancePercent,
+      totalStudents: users?.length || 0,
+      onlineNow: metrics.activeStudents,
+      biometricPings: metrics.biometric,
+      byClass: groupOnlineBy.class,
+      byDepartment: groupOnlineBy.department,
+      byYear: groupOnlineBy.year,
+      attendanceRows: attRows.slice(0, 1000), // Limit to prevent huge files
+    };
+   
+    const csv = [
+      ['Metric', 'Value'].join(','),
+      ['Overall Attendance %', attendancePercent].join(','),
+      ['Total Students', users?.length || 0].join(','),
+      ['Online Now', metrics.activeStudents].join(','),
+      ['Biometric Pings', metrics.biometric].join(','),
+      [''],
+      ['Class', 'Online Count'].join(','),
+      ...Object.entries(groupOnlineBy.class).map(([k, v]) => [k, v].join(',')),
+      [''],
+      ['Department', 'Online Count'].join(','),
+      ...Object.entries(groupOnlineBy.department).map(([k, v]) => [k, v].join(',')),
+      [''],
+      ['Year', 'Online Count'].join(','),
+      ...Object.entries(groupOnlineBy.year).map(([k, v]) => [k, v].join(',')),
+    ].join('\n');
+   
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `dashboard_export_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   if (!authorized) {
     return <View style={[styles.fill, styles.bg]}><Text style={{ color: '#1f2937' }}>Checking admin access…</Text></View>;
@@ -435,136 +825,88 @@ export default function AdminDashboard() {
 
             {/* Center: Analytics Overview (charts instead of map) */}
             <Panel style={styles.centerCol}>
-              <Text style={styles.panelTitle}>Attendance Analytics Overview</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <Text style={styles.panelTitle}>Attendance Analytics Overview</Text>
+                {Platform.OS === 'web' && (
+                  <TouchableOpacity onPress={exportDashboardData} style={styles.exportButton}>
+                    <Ionicons name="download-outline" size={16} color="#fff" />
+                    <Text style={styles.exportButtonText}>Export Dashboard</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
               <View style={styles.metricsRow}>
                 <View style={styles.metricChip}><Text style={styles.metricNum}>{attendancePercent}%</Text><Text style={styles.metricLabel}>Overall Attendance</Text></View>
                 <View style={styles.metricChip}><Text style={styles.metricNum}>{users?.length||0}</Text><Text style={styles.metricLabel}>Total Students</Text></View>
                 <View style={styles.metricChip}><Text style={styles.metricNum}>{metrics.activeStudents}</Text><Text style={styles.metricLabel}>Online Now</Text></View>
                 <View style={styles.metricChip}><Text style={styles.metricNum}>{metrics.biometric}</Text><Text style={styles.metricLabel}>Biometric Pings</Text></View>
               </View>
-              <View style={{ gap: 12 }}>
+              <View style={{ gap: 16 }}>
+                {/* First Row: KPI Cards and Donut Chart */}
                 <View style={{ flexDirection:'row', gap:12, flexWrap:'wrap' }}>
-                  {/* Overall real-time */}
-                  <View style={[styles.card, styles.gaugeWrap, { flex:1, minWidth:260 }]}>
+                  {/* Overall Attendance KPI */}
+                  <View style={[styles.chartCard, { flex:1, minWidth:200 }]}>
+                    <Text style={styles.chartTitle}>Overall Attendance</Text>
                     <View style={[styles.gaugeCircle, { borderColor: attendancePercent>=75?'#10b981':(attendancePercent>=50?'#f59e0b':'#ef4444') }]}>
                       <Text style={styles.gaugeText}>{attendancePercent}%</Text>
                     </View>
-                    <Text style={styles.muted}>Online / Total users</Text>
-                    <Text style={styles.muted}>{(sessions?.loggedIn?.length||0)} / {(users||[]).length}</Text>
+                    <Text style={styles.muted}>{(sessions?.loggedIn?.length||0)} / {(users||[]).length} users</Text>
                   </View>
 
-                  {/* Attendance by Class (online now) with colors */}
-                  <View style={[styles.card, { flex:2, minWidth:320 }]}>
-                    <Text style={styles.panelTitle}>Online by Class</Text>
-                    {(() => {
-                      const entries = Object.entries(groupOnlineBy.class);
-                      if (entries.length===0) return <Text style={styles.muted}>No online users</Text>;
-                      const max = Math.max(1, ...entries.map(([,v])=>v));
-                      const palette = ['#60a5fa','#f59e0b','#10b981','#ef4444','#8b5cf6','#22d3ee','#84cc16','#fb7185'];
-                      return (
-                        <View style={{ gap:8 }}>
-                          {entries.map(([name,val],idx)=> (
-                            <View key={name} style={{ gap:4 }}>
-                              <View style={{ flexDirection:'row', justifyContent:'space-between', alignItems:'center' }}>
-                                <View style={{ flexDirection:'row', alignItems:'center', gap:6 }}>
-                                  <View style={{ width:10, height:10, borderRadius:5, backgroundColor: palette[idx%palette.length] }} />
-                                  <Text style={styles.td}>{name}</Text>
-                                </View>
-                                <Text style={styles.td}>{val}</Text>
-                              </View>
-                              <View style={styles.chartBar}>
-                                <View style={[styles.chartSegment, { width: `${Math.round((val/max)*100)}%`, backgroundColor: palette[idx%palette.length] }]} />
-                              </View>
-                            </View>
-                          ))}
-                        </View>
-                      );
-                    })()}
+                  {/* Attendance by Region - Donut Chart */}
+                  <View style={[styles.chartCard, { flex:1, minWidth:250 }]}>
+                    <Text style={styles.chartTitle}>Attendance by Department</Text>
+                    {renderDonutChart(groupOnlineBy.department, 'department')}
+                  </View>
+
+                  {/* Attendance by Year - Pie Chart */}
+                  <View style={[styles.chartCard, { flex:1, minWidth:250 }]}>
+                    <Text style={styles.chartTitle}>Attendance by Year</Text>
+                    {renderPieChart(groupOnlineBy.year)}
                   </View>
                 </View>
 
-                {/* Visualization controls + main chart */}
-                <View style={{ flexDirection:'row', gap:12, alignItems:'flex-start', flexWrap:'wrap' }}>
-                  <View style={[styles.card, { minWidth:220, maxWidth:260, flex:1 }]}>
-                    <Text style={styles.panelTitle}>Visualization</Text>
-                    <View style={styles.segmentRow}>
-                      {['bar','donut'].map(t => (
-                        <TouchableOpacity key={t} onPress={()=>setVizType(t)} style={[styles.segmentBtn, vizType===t && styles.segmentActive]}><Text style={styles.segmentLabel}>{t}</Text></TouchableOpacity>
-                      ))}
-                    </View>
-                    <Text style={[styles.muted,{marginTop:8}]}>Category</Text>
-                    <View style={styles.segmentRow}>
-                      {['class','departments','year','overall'].map(c => (
-                        <TouchableOpacity key={c} onPress={()=>setVizCategory(c)} style={[styles.segmentBtn, vizCategory===c && styles.segmentActive]}><Text style={styles.segmentLabel}>{c}</Text></TouchableOpacity>
-                      ))}
-                    </View>
-                    <Text style={[styles.muted,{marginTop:8}]}>Search user</Text>
-                    {Platform.OS==='web' ? (
-                      <input value={searchName} onChange={e=>setSearchName(e.target.value)} placeholder="Type name" style={styles.webInput} />
-                    ) : (
-                      <TextInput value={searchName} onChangeText={setSearchName} placeholder="Type name" style={styles.input} />
-                    )}
-                    <TouchableOpacity onPress={()=>{
-                      const nm = (searchName||'').trim().toLowerCase();
-                      const u = (users||[]).find(x => (x.name||'').toLowerCase().includes(nm));
-                      setSelectedUser(u||null);
-                    }} style={styles.primaryBtn}><Text style={styles.primaryBtnText}>View</Text></TouchableOpacity>
+                {/* Second Row: Clustered and Stacked Charts */}
+                <View style={{ flexDirection:'row', gap:12, flexWrap:'wrap' }}>
+                  {/* Online by Class - Clustered Bar Chart */}
+                  <View style={[styles.chartCard, { flex:2, minWidth:400 }]}>
+                    <Text style={styles.chartTitle}>Online Count by Class, Status</Text>
+                    {renderClusteredBarChart(groupOnlineBy.class, users)}
                   </View>
 
-                  <View style={[styles.card, { flex:3, minWidth:300 }]}>
-                    <Text style={styles.panelTitle}>Selected view</Text>
-                    {(() => {
-                      if (selectedUser) {
-                        const rp = (pings||[]).filter(p=>String(p.studentId)===String(selectedUser._id)).sort((a,b)=> new Date(b.timestamp)-new Date(a.timestamp))[0];
-                        return (
-                          <View style={{ gap:6 }}>
-                            <Text style={styles.td}>{selectedUser.name} ({selectedUser.regNo})</Text>
-                            <Text style={styles.muted}>Class: {selectedUser.class||'-'} | Dept: {selectedUser.department||'-'} | Year: {selectedUser.year||'-'}</Text>
-                            <Text style={styles.muted}>Status: {selectedUser.loggedIn?'Online':'Offline'}</Text>
-                            {rp?.location?.latitude && <Text style={styles.muted}>Last location: {rp.location.latitude.toFixed(4)}, {rp.location.longitude.toFixed(4)} at {new Date(rp.timestamp).toLocaleString()}</Text>}
-                          </View>
-                        );
-                      }
-                      const palette = ['#60a5fa','#f59e0b','#10b981','#ef4444','#8b5cf6','#22d3ee','#84cc16','#fb7185'];
-                      const dataSrc = vizCategory==='class'? groupOnlineBy.class : vizCategory==='departments'? groupOnlineBy.department : vizCategory==='year'? groupOnlineBy.year : { Online:(sessions?.loggedIn?.length||0), Offline: Math.max(0,(users||[]).length-(sessions?.loggedIn?.length||0)) };
-                      const entries = Object.entries(dataSrc);
-                      if (entries.length===0) return <Text style={styles.muted}>No data</Text>;
-                      const total = entries.reduce((s,[,v])=>s+v,0);
-                      const max = Math.max(1, ...entries.map(([,v])=>v));
-                      if (vizType==='donut') {
-                        return (
-                          <View style={{ gap:8 }}>
-                            <View style={{ flexDirection:'row', flexWrap:'wrap', gap:12 }}>
-                              {entries.map(([label,val],idx)=> (
-                                <View key={label} style={{ alignItems:'center' }}>
-                                  <View style={{ width:80, height:80, borderRadius:40, borderWidth:10, borderColor: palette[idx%palette.length], opacity:0.9 }} />
-                                  <Text style={{ fontSize:12, marginTop:4 }}>{label}: {val}</Text>
-                                </View>
-                              ))}
-                            </View>
-                            <Text style={styles.muted}>Total: {total}</Text>
-                          </View>
-                        );
-                      }
-                      return (
-                        <View style={{ gap:8 }}>
-                          {entries.map(([label,val],idx)=> (
-                            <View key={label} style={{ gap:4 }}>
-                              <View style={{ flexDirection:'row', justifyContent:'space-between', alignItems:'center' }}>
-                                <View style={{ flexDirection:'row', alignItems:'center', gap:6 }}>
-                                  <View style={{ width:10, height:10, borderRadius:5, backgroundColor: palette[idx%palette.length] }} />
-                                  <Text style={styles.td}>{label}</Text>
-                                </View>
-                                <Text style={styles.td}>{val}</Text>
-                              </View>
-                              <View style={styles.chartBar}>
-                                <View style={[styles.chartSegment, { width: `${Math.round((val/max)*100)}%`, backgroundColor: palette[idx%palette.length] }]} />
-                              </View>
-                            </View>
-                          ))}
-                        </View>
-                      );
-                    })()}
+                  {/* Attendance by Month - Stacked Column Chart */}
+                  <View style={[styles.chartCard, { flex:2, minWidth:400 }]}>
+                    <Text style={styles.chartTitle}>Attendance by Month, Status</Text>
+                    {renderStackedBarChart(attRows)}
+                  </View>
+                </View>
+
+                {/* Third Row: Line Chart and Histogram */}
+                <View style={{ flexDirection:'row', gap:12, flexWrap:'wrap' }}>
+                  {/* Attendance Trend - Line Chart */}
+                  <View style={[styles.chartCard, { flex:2, minWidth:400 }]}>
+                    <Text style={styles.chartTitle}>Attendance Trend Over Time</Text>
+                    {renderLineChart(attRows)}
+                  </View>
+
+                  {/* Attendance Distribution - Histogram */}
+                  <View style={[styles.chartCard, { flex:1, minWidth:300 }]}>
+                    <Text style={styles.chartTitle}>Attendance Distribution</Text>
+                    {renderHistogram(attRows)}
+                  </View>
+                </View>
+
+                {/* Fourth Row: Horizontal Bar Charts */}
+                <View style={{ flexDirection:'row', gap:12, flexWrap:'wrap' }}>
+                  {/* Attendance by Class - Horizontal Bar */}
+                  <View style={[styles.chartCard, { flex:2, minWidth:400 }]}>
+                    <Text style={styles.chartTitle}>Attendance by Class</Text>
+                    {renderHorizontalBarChart(groupOnlineBy.class)}
+                  </View>
+
+                  {/* Attendance by Department - Horizontal Bar */}
+                  <View style={[styles.chartCard, { flex:1, minWidth:300 }]}>
+                    <Text style={styles.chartTitle}>Attendance by Department</Text>
+                    {renderHorizontalBarChart(groupOnlineBy.department)}
                   </View>
                 </View>
               </View>
@@ -604,7 +946,7 @@ export default function AdminDashboard() {
                   // Get latest ping location for this user
                   const userPings = (pings||[]).filter(p => String(p.studentId) === String(u._id));
                   const latestPing = userPings.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
-                  
+                 
                   let locationText = '—';
                   let lat = null;
                   let lon = null;
@@ -616,22 +958,22 @@ export default function AdminDashboard() {
                     lat = u.location.latitude;
                     lon = u.location.longitude;
                   }
-                  
+                 
                   if (lat && lon) {
-                    locationText = u.loggedIn 
+                    locationText = u.loggedIn
                       ? `Current: ${lat.toFixed(4)}, ${lon.toFixed(4)}`
                       : `Last: ${lat.toFixed(4)}, ${lon.toFixed(4)}`;
                   }
-                  
+                 
                   const openGoogleMaps = () => {
                     if (lat && lon) {
-                      const url = Platform.OS === 'ios' 
+                      const url = Platform.OS === 'ios'
                         ? `maps://maps.apple.com/?q=${lat},${lon}`
                         : `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
                       Linking.openURL(url).catch(err => console.error('Failed to open maps:', err));
                     }
                   };
-                  
+                 
                   return (
                     <View key={u._id||i} style={styles.tableRow}>
                       <Text style={[styles.td,{flex:2}]}>{u.name}</Text>
@@ -1125,7 +1467,7 @@ export default function AdminDashboard() {
             <TouchableOpacity style={styles.foldHandle} onPress={() => setShowFilters(false)}>
               <Text style={{ color: '#fff', fontWeight: '700' }}>{'<'}</Text>
             </TouchableOpacity>
-            
+           
             <View style={styles.sidebarContent}>
               <View style={styles.filterSection}>
                 <Text style={styles.sectionTitle}>Date Range</Text>
@@ -1137,7 +1479,7 @@ export default function AdminDashboard() {
                   <Text style={styles.dateLabel}>To:</Text>
                   <input type="date" value={to} onChange={e => setTo(e.target.value)} style={styles.dateInput} />
                 </View>
-                
+               
                 <Text style={styles.sectionTitle}>Grouping</Text>
                 <select value={granularity} onChange={e => setGranularity(e.target.value)} style={styles.select}>
                   <option value="day">Daily</option>
@@ -1145,35 +1487,35 @@ export default function AdminDashboard() {
                   <option value="month">Monthly</option>
                   <option value="year">Yearly</option>
                 </select>
-                
+               
                 <Text style={styles.sectionTitle}>Search</Text>
-                <input 
-                  value={query} 
-                  onChange={e => setQuery(e.target.value)} 
-                  placeholder="Search by name, reg no, username, etc." 
+                <input
+                  value={query}
+                  onChange={e => setQuery(e.target.value)}
+                  placeholder="Search by name, reg no, username, etc."
                   style={styles.textInput}
                 />
-                
-                <TouchableOpacity 
-                  onPress={() => { 
-                    setShowFilters(false); 
-                    if (tab==='attendance') loadAttendance(); 
+               
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowFilters(false);
+                    if (tab==='attendance') loadAttendance();
                     else loadPings();
                     loadUsers();
-                  }} 
+                  }}
                   style={[styles.primaryBtn,{alignSelf:'flex-start'}]}
                 >
                   <Text style={styles.primaryBtnText}>Apply Filters</Text>
                 </TouchableOpacity>
               </View>
-              
+             
               <View style={styles.filterSection}>
                 <Text style={styles.sectionTitle}>Export Data</Text>
                 <TouchableOpacity onPress={exportUsers} style={styles.secondaryBtn}><Text style={styles.secondaryBtnText}>Export Users (CSV)</Text></TouchableOpacity>
                 <TouchableOpacity onPress={exportAttendance} style={styles.secondaryBtn}><Text style={styles.secondaryBtnText}>Export Attendance (CSV)</Text></TouchableOpacity>
                 <Text style={styles.hint}>CSV files open directly in Excel</Text>
               </View>
-              
+             
               <View style={styles.filterSection}>
                 <Text style={styles.sectionTitle}>Quick Analytics</Text>
                 {(() => {
@@ -1284,7 +1626,7 @@ export default function AdminDashboard() {
                 const pinPoly=(pt,poly)=>{ if(!poly||poly.length<3) return false; let inside=false; for(let i=0,j=poly.length-1;i<poly.length;j=i++){const xi=poly[i].latitude, yi=poly[i].longitude; const xj=poly[j].latitude, yj=poly[j].longitude; const intersect=((yi>pt.longitude)!==(yj>pt.longitude)) && (pt.latitude < (xj - xi) * (pt.longitude - yi) / (yj - yi + 1e-12) + xi); if(intersect) inside=!inside;} return inside; };
                 const liveAnchors = s.proximityAnchors||[];
                 const singleAnchor = s.proximityLocation; const singleR = s.proximityRadiusMeters||100;
-                
+               
                 // Calculate valid pings per period per date
                 const validPingsByDatePeriod = {};
                 (historyData.pings||[]).forEach(p=>{
@@ -1300,7 +1642,7 @@ export default function AdminDashboard() {
                     validPingsByDatePeriod[d][period]++;
                   }
                 });
-                
+               
                 return (historyData.records||[]).map((r,i)=>{
                   const statusByPeriod = {};
                   (r.periods||[]).forEach(p=>{ statusByPeriod[p.periodNumber]=p.status; });
@@ -1323,7 +1665,7 @@ export default function AdminDashboard() {
                 } catch {}
                 // Skip days with neither attendance nor any pings
                 if (((r.periods||[]).length===0) && !datesWithPings.has(r.date)) return null;
-                
+               
                 // Calculate period statuses: use recorded status if available, otherwise calculate from pings
                 const periodStatuses = {};
                 for(let pnum=1; pnum<=8; pnum++) {
@@ -1342,7 +1684,7 @@ export default function AdminDashboard() {
                     }
                   }
                 }
-                
+               
                 const presentSet = new Set(Object.keys(periodStatuses).filter(p=>periodStatuses[p]==='present').map(Number));
                 // Calculate overall: present if all 8 periods are present
                 const presentCount = presentSet.size;
@@ -1420,8 +1762,8 @@ export default function AdminDashboard() {
                     });
                     for(let p=1; p<=8; p++) {
                       const validCount = validPingsByPeriod[p] || 0;
-                      const status = attendanceByDatePeriod[d] && attendanceByDatePeriod[d][p] 
-                        ? attendanceByDatePeriod[d][p] 
+                      const status = attendanceByDatePeriod[d] && attendanceByDatePeriod[d][p]
+                        ? attendanceByDatePeriod[d][p]
                         : (validCount >= threshold ? 'present' : (validCount > 0 ? 'absent' : '-'));
                       const locationText = (collegePoly.length>=3 ? pinPoly({latitude: byDate[d][0]?.location?.latitude, longitude: byDate[d][0]?.location?.longitude}, collegePoly) : (s.useCollegeLocation && s.collegeLocation && dist({latitude: byDate[d][0]?.location?.latitude, longitude: byDate[d][0]?.location?.longitude}, s.collegeLocation)<=campusRadius)) ? 'college' : 'live';
                       csvRows.push([d, validCount, locationText, `P${p}`, status].join(','));
@@ -1598,6 +1940,26 @@ const styles = StyleSheet.create({
     },
   }),
 },
+  chartCard: {
+    borderRadius: 12,
+    padding: 16,
+    backgroundColor: '#ffffff',
+    ...Platform.select({
+      web: {
+        backgroundColor: '#ffffff',
+        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
+        border: '1px solid #e5e7eb',
+      },
+      default: {
+        backgroundColor: '#ffffff',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 3,
+      },
+    }),
+  },
 
   contentBox: { padding: 12 },
 
@@ -1664,7 +2026,7 @@ const styles = StyleSheet.create({
   select: { width:'100%', padding:8, border:'1px solid #d1d5db', borderRadius:4, marginBottom:8 },
   textInput: { width:'100%', padding:8, border:'1px solid #d1d5db', borderRadius:4, marginBottom:8 },
   hint: { fontSize:12, color:'#6b7280', marginTop:4 },
-  chartTitle: { fontSize:14, fontWeight:'700', color:'#0f172a', marginBottom:8 },
+  chartTitle: { fontSize:14, fontWeight:'700', color:'#0f172a', marginBottom:12 },
   chartBar: { height:20, flexDirection:'row', backgroundColor:'rgba(148,163,184,0.25)', borderRadius:4, overflow:'hidden', marginBottom:4 },
   chartSegment: { height:'100%' },
   chartLabel: { fontSize:12, color:'#475569' },
@@ -1672,7 +2034,7 @@ const styles = StyleSheet.create({
   // History modal styles
   histBackdrop: { position:'fixed', top:0, left:0, right:0, bottom:0, backgroundColor:'rgba(0,0,0,0.5)', zIndex:2000, alignItems:'center', justifyContent:'center' },
   histCard: { width:'90%', maxWidth: 1100, maxHeight: '90%', padding:16, borderRadius:16, backgroundColor:'rgba(104, 100, 100, 0.95)', ...Platform.select({ web: { overflowY:'auto' }, default: {} }) },
-  
+ 
   // Export button styles
   exportButton: {
     flexDirection: 'row',

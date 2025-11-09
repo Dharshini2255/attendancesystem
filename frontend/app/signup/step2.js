@@ -167,4 +167,4 @@ export default function Step2() {
 const styles = StyleSheet.create({
   title: { fontSize: 22, fontWeight: 'bold', marginBottom: 20 },
   input: { borderWidth: 1, padding: 10, marginBottom: 15, borderRadius: 5, width: '100%' }
-});
+});3
