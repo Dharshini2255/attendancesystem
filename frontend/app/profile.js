@@ -124,6 +124,11 @@ export default function Profile() {
 
   const savePhoto = async (uri) => {
     try {
+      if (!uri) {
+        Alert.alert('Error', 'Invalid image URI');
+        return;
+      }
+
       // For web, convert to base64 with compression
       if (Platform.OS === 'web') {
         // Image is already compressed via FileReader
@@ -139,15 +144,21 @@ export default function Profile() {
             await AsyncStorage.setItem(key, uri);
             Alert.alert('Success', 'Profile photo saved successfully');
           } catch (err) {
+            console.error('Save photo error (web):', err);
             if (err.message?.includes('exceeds') || err.message?.includes('QuotaExceeded')) {
               Alert.alert('Error', 'Image is too large. Please choose a smaller image.');
             } else {
-              Alert.alert('Error', 'Failed to save photo');
+              Alert.alert('Error', `Failed to save photo: ${err.message || 'Unknown error'}`);
             }
           }
         }
       } else {
         // For mobile, uri is already optimized by ImagePicker with quality settings
+        if (!uri || typeof uri !== 'string') {
+          Alert.alert('Error', 'Invalid image URI received');
+          return;
+        }
+        
         setPhotoUri(uri);
         if (userInfo) {
           const key = `profilePhoto:${userInfo._id || userInfo.username}`;
@@ -155,17 +166,18 @@ export default function Profile() {
             await AsyncStorage.setItem(key, uri);
             Alert.alert('Success', 'Profile photo saved successfully');
           } catch (err) {
+            console.error('Save photo error (mobile):', err);
             if (err.message?.includes('exceeds') || err.message?.includes('QuotaExceeded')) {
               Alert.alert('Error', 'Image is too large. Please choose a smaller image.');
             } else {
-              Alert.alert('Error', 'Failed to save photo');
+              Alert.alert('Error', `Failed to save photo: ${err.message || 'Unknown error'}`);
             }
           }
         }
       }
     } catch (err) {
       console.error('Save photo error:', err);
-      Alert.alert('Error', 'Failed to process image');
+      Alert.alert('Error', `Failed to process image: ${err.message || 'Unknown error'}`);
     }
   };
 
@@ -189,11 +201,14 @@ export default function Profile() {
         input.click();
         return;
       }
+      // Request permissions
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') { 
-        Alert.alert('Permission required', 'Please allow photo library access.'); 
+        Alert.alert('Permission required', 'Please allow photo library access in your device settings.'); 
         return; 
       }
+      
+      // Launch image picker
       const result = await ImagePicker.launchImageLibraryAsync({ 
         mediaTypes: ImagePicker.MediaTypeOptions.Images, 
         allowsEditing: true, 
@@ -201,12 +216,27 @@ export default function Profile() {
         aspect: [1, 1], // Square aspect ratio
         base64: false, // Don't include base64 to reduce memory
       });
-      if (!result.canceled && result.assets?.length) {
-        await savePhoto(result.assets[0].uri);
+      
+      if (result.canceled) {
+        return; // User cancelled, no error
       }
+      
+      if (!result.assets || result.assets.length === 0) {
+        Alert.alert('Error', 'No image was selected');
+        return;
+      }
+      
+      const asset = result.assets[0];
+      if (!asset.uri) {
+        Alert.alert('Error', 'Image URI is missing. Please try again.');
+        return;
+      }
+      
+      await savePhoto(asset.uri);
     } catch (e) { 
       console.error('Gallery pick error:', e);
-      Alert.alert('Error', 'Failed to pick image from gallery');
+      const errorMessage = e?.message || e?.toString() || 'Unknown error';
+      Alert.alert('Error', `Failed to pick image from gallery: ${errorMessage}`);
     }
   };
 

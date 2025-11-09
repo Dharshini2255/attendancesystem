@@ -719,13 +719,53 @@ app.post('/admin/settings', async (req, res) => {
   }
 });
 
-// Sessions overview
+// Sessions overview - Check actual activity, not just loggedIn flag
 app.get('/admin/sessions', async (_req, res) => {
   try {
     const users = await Student.find({}).select('name regNo username email loggedIn lastLoginAt lastLogoutAt class year').lean();
-    const loggedIn = users.filter(u => u.loggedIn);
-    const loggedOut = users.filter(u => !u.loggedIn);
-    res.json({ loggedIn, loggedOut, total: users.length });
+    
+    // Check for actual activity: user must have logged in AND have recent activity (ping or login within last 30 minutes)
+    const now = new Date();
+    const activeThreshold = new Date(now.getTime() - 30 * 60 * 1000); // 30 minutes
+    
+    // Get all recent pings in one query for efficiency
+    const recentPings = await Ping.find({ 
+      timestamp: { $gte: activeThreshold } 
+    }).select('studentId').lean();
+    const activeStudentIds = new Set(recentPings.map(p => String(p.studentId)));
+    
+    const actuallyActive = [];
+    const inactive = [];
+    const inactiveUserIds = [];
+    
+    for (const u of users) {
+      // Check if user has recent activity
+      const hasRecentLogin = u.lastLoginAt && new Date(u.lastLoginAt) >= activeThreshold;
+      const hasRecentPing = activeStudentIds.has(String(u._id));
+      
+      // User is considered active only if:
+      // 1. loggedIn flag is true AND
+      // 2. Has recent login (within 30 min) OR has recent ping (within 30 min)
+      if (u.loggedIn && (hasRecentLogin || hasRecentPing)) {
+        actuallyActive.push(u);
+      } else {
+        // If loggedIn is true but no recent activity, mark as inactive
+        if (u.loggedIn && !hasRecentLogin && !hasRecentPing) {
+          inactiveUserIds.push(u._id);
+        }
+        inactive.push({ ...u, loggedIn: false });
+      }
+    }
+    
+    // Batch update all inactive users
+    if (inactiveUserIds.length > 0) {
+      await Student.updateMany(
+        { _id: { $in: inactiveUserIds } },
+        { $set: { loggedIn: false } }
+      );
+    }
+    
+    res.json({ loggedIn: actuallyActive, loggedOut: inactive, total: users.length });
   } catch (err) {
     console.error('Admin sessions error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -989,7 +1029,41 @@ app.get('/admin/users', async (req, res) => {
       if (mongoose.Types.ObjectId.isValid(q)) or.push({ _id: q });
       filter = { $or: or };
     }
-    const users = await Student.find(filter).sort({ name: 1 }).lean();
+    let users = await Student.find(filter).sort({ name: 1 }).lean();
+    
+    // Update loggedIn status based on actual activity (within last 30 minutes)
+    const now = new Date();
+    const activeThreshold = new Date(now.getTime() - 30 * 60 * 1000); // 30 minutes
+    
+    // Get all recent pings in one query for efficiency
+    const recentPings = await Ping.find({ 
+      timestamp: { $gte: activeThreshold } 
+    }).select('studentId').lean();
+    const activeStudentIds = new Set(recentPings.map(p => String(p.studentId)));
+    
+    // Batch update inactive users
+    const inactiveUserIds = [];
+    for (const u of users) {
+      if (u.loggedIn) {
+        // Check if user has recent activity
+        const hasRecentLogin = u.lastLoginAt && new Date(u.lastLoginAt) >= activeThreshold;
+        const hasRecentPing = activeStudentIds.has(String(u._id));
+        
+        // If no recent activity, mark as offline
+        if (!hasRecentLogin && !hasRecentPing) {
+          inactiveUserIds.push(u._id);
+          u.loggedIn = false;
+        }
+      }
+    }
+    
+    // Batch update all inactive users
+    if (inactiveUserIds.length > 0) {
+      await Student.updateMany(
+        { _id: { $in: inactiveUserIds } },
+        { $set: { loggedIn: false } }
+      );
+    }
     const safe = users.map(u => { const { password, ...rest } = u; return rest; });
     res.json(safe);
   } catch (err) {
