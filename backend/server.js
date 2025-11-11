@@ -75,33 +75,6 @@ const pingSchema = new mongoose.Schema({
 });
 const Ping = mongoose.model("Ping", pingSchema);
 
-const notificationSchema = new mongoose.Schema({
-  type: { type: String, enum: ['online', 'offline', 'locationOff', 'helpRequest', 'noPing'], required: true },
-  studentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Student' },
-  studentName: String,
-  regNo: String,
-  message: String,
-  at: { type: Date, default: Date.now },
-  read: { type: Boolean, default: false },
-  attendanceStatus: { type: String, enum: ['present', 'absent', null], default: null } // For help requests
-}, { timestamps: true });
-// Add index to prevent duplicates
-notificationSchema.index({ type: 1, studentId: 1, at: 1 }, { unique: false });
-const Notification = mongoose.model("Notification", notificationSchema);
-
-// Message/Reply system for admin-user communication
-const messageSchema = new mongoose.Schema({
-  studentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Student' },
-  studentName: String,
-  regNo: String,
-  sender: { type: String, enum: ['student', 'admin'], required: true },
-  message: String,
-  replyTo: { type: mongoose.Schema.Types.ObjectId, ref: 'Message', default: null }, // For threading
-  read: { type: Boolean, default: false },
-  at: { type: Date, default: Date.now }
-}, { timestamps: true });
-const Message = mongoose.model("Message", messageSchema);
-
 // ------------------- Validation Routes -------------------
 app.post('/check-student', async (req, res) => {
   const { name, regNo } = req.body;
@@ -197,17 +170,6 @@ app.post('/login', async (req, res) => {
     user.lastLoginAt = new Date();
     await user.save();
 
-    // Create online notification
-    const onlineNotification = new Notification({
-      type: 'online',
-      studentId: user._id,
-      studentName: user.name,
-      regNo: user.regNo,
-      message: `${user.name} (${user.regNo}) is now online`,
-      at: new Date()
-    });
-    await onlineNotification.save();
-
     res.json({
       message: "✅ Login successful",
       user: {
@@ -239,18 +201,6 @@ app.post('/logout', async (req, res) => {
     user.loggedIn = false;
     user.lastLogoutAt = new Date();
     await user.save();
-
-    // Create offline notification
-    const offlineNotification = new Notification({
-      type: 'offline',
-      studentId: user._id,
-      studentName: user.name,
-      regNo: user.regNo,
-      message: `${user.name} (${user.regNo}) is now offline`,
-      at: new Date()
-    });
-    await offlineNotification.save();
-
     res.json({ ok: true });
   } catch (err) {
     console.error('Logout error:', err);
@@ -273,32 +223,11 @@ app.post('/attendance/mark', async (req, res) => {
     const proximityAnchor = settings?.proximityLocation;
     const proximityRadius = Number(settings?.proximityRadiusMeters || 100);
 
-    // Validate location is provided
-    if (!location || typeof location.latitude !== 'number' || typeof location.longitude !== 'number' || 
-        isNaN(location.latitude) || isNaN(location.longitude)) {
-      // Create location off notification
-      const locationOffNotification = new Notification({
-        type: 'locationOff',
-        studentId: student._id,
-        studentName: student.name,
-        regNo: student.regNo,
-        message: `${student.name} (${student.regNo}) switched off location while taking attendance`,
-        at: new Date()
-      });
-      await locationOffNotification.save();
-      
-      return res.status(400).json({ error: "Valid location is required. Attendance not marked." });
-    }
-
-    const MAX_RADIUS_METERS = parseInt(process.env.MAX_RADIUS_METERS || '500', 10); // Default to 500m instead of 50km
+    const MAX_RADIUS_METERS = parseInt(process.env.MAX_RADIUS_METERS || '50000', 10); // campus radius
 
     const toRad = (value) => (value * Math.PI) / 180;
     const R = 6371000;
     const distanceMeters = (a, b) => {
-      if (!a || !b || typeof a.latitude !== 'number' || typeof a.longitude !== 'number' ||
-          typeof b.latitude !== 'number' || typeof b.longitude !== 'number') {
-        return Infinity; // Invalid location = infinite distance
-      }
       const dLat = toRad(a.latitude - b.latitude);
       const dLon = toRad(a.longitude - b.longitude);
       const lat1 = toRad(b.latitude);
@@ -309,95 +238,38 @@ app.post('/attendance/mark', async (req, res) => {
 
     // polygon containment if provided
     const pointInPolygon = (pt, poly) => {
-      if (!pt || !poly || !Array.isArray(poly) || poly.length < 3) return false;
       let inside = false;
       for (let i=0,j=poly.length-1; i<poly.length; j=i++) {
         const xi=poly[i].latitude, yi=poly[i].longitude;
         const xj=poly[j].latitude, yj=poly[j].longitude;
-        if (typeof xi !== 'number' || typeof yi !== 'number' || typeof xj !== 'number' || typeof yj !== 'number') continue;
         const intersect = ((yi>pt.longitude)!==(yj>pt.longitude)) && (pt.latitude < (xj - xi) * (pt.longitude - yi) / (yj - yi + 1e-12) + xi);
         if (intersect) inside = !inside;
       }
       return inside;
     };
 
-    // ALWAYS verify location - check college location by default
     let allowedByCollege = false;
-    // Check college polygon first if available
-    if (Array.isArray(settings?.collegePolygon) && settings.collegePolygon.length >= 3) {
-      allowedByCollege = pointInPolygon(location, settings.collegePolygon);
-    } 
-    // If no polygon, check distance to college location
-    else if (collegeAnchor && typeof collegeAnchor.latitude === 'number' && typeof collegeAnchor.longitude === 'number') {
-      const distance = distanceMeters(location, collegeAnchor);
-      const radiusToUse = settings?.useCollegeLocation !== false ? MAX_RADIUS_METERS : MAX_RADIUS_METERS;
-      allowedByCollege = distance <= radiusToUse;
+    if (settings?.useCollegeLocation) {
+      if (Array.isArray(settings?.collegePolygon) && settings.collegePolygon.length >= 3) {
+        allowedByCollege = pointInPolygon(location, settings.collegePolygon);
+      } else {
+        allowedByCollege = distanceMeters(location, collegeAnchor) <= MAX_RADIUS_METERS;
+      }
     }
-
-    // Check proximity anchors (admin's current location or configured anchors)
     let allowedByProximity = false;
-    if (proximityAnchor && typeof proximityAnchor.latitude === 'number' && typeof proximityAnchor.longitude === 'number') {
-      const distance = distanceMeters(location, proximityAnchor);
-      allowedByProximity = distance <= proximityRadius;
+    if (proximityAnchor) {
+      allowedByProximity = distanceMeters(location, proximityAnchor) <= proximityRadius && !!student.loggedIn;
     }
     if (Array.isArray(settings?.proximityAnchors) && settings.proximityAnchors.length) {
       for (const a of settings.proximityAnchors) {
-        if (a?.location?.latitude && a?.location?.longitude && 
-            typeof a.location.latitude === 'number' && typeof a.location.longitude === 'number') {
+        if (a?.location?.latitude && a?.location?.longitude) {
           const r = Number(a.radiusMeters || proximityRadius);
-          const distance = distanceMeters(location, a.location);
-          if (distance <= r) { 
-            allowedByProximity = true; 
-            break; 
-          }
+          if (distanceMeters(location, a.location) <= r) { allowedByProximity = true; break; }
         }
       }
     }
-
-    // REJECT if location is not valid - must be within college OR proximity area
-    if (!allowedByCollege && !allowedByProximity) {
-      const collegeDist = collegeAnchor ? distanceMeters(location, collegeAnchor) : Infinity;
-      const proximityDist = proximityAnchor ? distanceMeters(location, proximityAnchor) : Infinity;
-      return res.status(403).json({ 
-        error: `Outside allowed location. Distance from college: ${Math.round(collegeDist)}m, from proximity: ${Math.round(proximityDist)}m. Attendance not marked.` 
-      });
-    }
-
-    // Validate ping time against period configuration
-    if (settings?.periodConfig && Array.isArray(settings.periodConfig) && settings.periodConfig.length > 0) {
-      const periodConfig = settings.periodConfig.find(p => p.periodNumber === periodNumber);
-      if (periodConfig && periodConfig.pings && Array.isArray(periodConfig.pings) && periodConfig.pings.length > 0) {
-        const now = new Date();
-        const nowIST = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-        const currentTime = `${String(nowIST.getHours()).padStart(2, '0')}:${String(nowIST.getMinutes()).padStart(2, '0')}`;
-        
-        // Check if current time matches any of the configured ping times (with ±5 minute tolerance)
-        const isWithinTimeWindow = periodConfig.pings.some(pingConfig => {
-          if (!pingConfig.time) return false;
-          const [pingHour, pingMin] = pingConfig.time.split(':').map(Number);
-          const pingTimeMinutes = pingHour * 60 + pingMin;
-          const [currHour, currMin] = currentTime.split(':').map(Number);
-          const currTimeMinutes = currHour * 60 + currMin;
-          const diff = Math.abs(currTimeMinutes - pingTimeMinutes);
-          // Allow ±5 minutes tolerance
-          return diff <= 5;
-        });
-
-        if (!isWithinTimeWindow) {
-          const allowedTimes = periodConfig.pings.map(p => p.time).filter(Boolean).join(', ');
-          return res.status(403).json({ 
-            error: `Ping time ${currentTime} is not within allowed time windows for period ${periodNumber}. Allowed times: ${allowedTimes}` 
-          });
-        }
-
-        // Validate timestampType matches the ping type
-        if (timestampType && periodConfig.pings.some(p => p.type === timestampType)) {
-          // Valid timestamp type
-        } else if (timestampType) {
-          // Invalid timestamp type, but we'll allow it with a warning
-          console.warn(`Timestamp type ${timestampType} doesn't match period config for period ${periodNumber}`);
-        }
-      }
+    if (!(allowedByCollege || allowedByProximity)) {
+      return res.status(403).json({ error: "Outside allowed location. Attendance not marked." });
     }
 
     const { biometricType, biometricVerified } = req.body || {};
@@ -427,70 +299,25 @@ app.post('/attendance/mark', async (req, res) => {
     });
 
     const validPings = allPings.filter(p => {
-      // Validate ping location
-      if (!p.location || typeof p.location.latitude !== 'number' || typeof p.location.longitude !== 'number' ||
-          isNaN(p.location.latitude) || isNaN(p.location.longitude)) {
-        return false;
-      }
-
-      // ALWAYS check college location
       let byCollege = false;
-      if (Array.isArray(settings?.collegePolygon) && settings.collegePolygon.length >= 3) {
-        byCollege = pointInPolygon(p.location, settings.collegePolygon);
-      } else if (collegeAnchor && typeof collegeAnchor.latitude === 'number' && typeof collegeAnchor.longitude === 'number') {
-        const distance = distanceMeters(p.location, collegeAnchor);
-        const radiusToUse = settings?.useCollegeLocation !== false ? MAX_RADIUS_METERS : MAX_RADIUS_METERS;
-        byCollege = distance <= radiusToUse;
+      if (settings?.useCollegeLocation) {
+        if (Array.isArray(settings?.collegePolygon) && settings.collegePolygon.length >= 3) {
+          byCollege = pointInPolygon(p.location, settings.collegePolygon);
+        } else {
+          byCollege = distanceMeters(p.location, collegeAnchor) <= MAX_RADIUS_METERS;
+        }
       }
-
-      // Check proximity anchors
       let byProx = false;
-      if (proximityAnchor && typeof proximityAnchor.latitude === 'number' && typeof proximityAnchor.longitude === 'number') {
-        const distance = distanceMeters(p.location, proximityAnchor);
-        byProx = distance <= proximityRadius;
-      }
+      if (proximityAnchor) byProx = distanceMeters(p.location, proximityAnchor) <= proximityRadius && !!student.loggedIn;
       if (Array.isArray(settings?.proximityAnchors) && settings.proximityAnchors.length) {
         for (const a of settings.proximityAnchors) {
-          if (a?.location?.latitude && a?.location?.longitude && 
-              typeof a.location.latitude === 'number' && typeof a.location.longitude === 'number') {
+          if (a?.location?.latitude && a?.location?.longitude) {
             const r = Number(a.radiusMeters || proximityRadius);
-            const distance = distanceMeters(p.location, a.location);
-            if (distance <= r) { 
-              byProx = true; 
-              break; 
-            }
+            if (distanceMeters(p.location, a.location) <= r) { byProx = true; break; }
           }
         }
       }
-      if (!byCollege && !byProx) return false;
-
-      // Validate ping time against period configuration
-      if (settings?.periodConfig && Array.isArray(settings.periodConfig) && settings.periodConfig.length > 0) {
-        const periodConfig = settings.periodConfig.find(per => per.periodNumber === p.periodNumber);
-        if (periodConfig && periodConfig.pings && Array.isArray(periodConfig.pings) && periodConfig.pings.length > 0) {
-          const pingTime = new Date(p.timestamp);
-          const pingTimeIST = new Date(pingTime.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-          const pingTimeStr = `${String(pingTimeIST.getHours()).padStart(2, '0')}:${String(pingTimeIST.getMinutes()).padStart(2, '0')}`;
-          
-          // Check if ping time matches any of the configured ping times (with ±5 minute tolerance)
-          const isWithinTimeWindow = periodConfig.pings.some(pingConfig => {
-            if (!pingConfig.time) return false;
-            const [pingHour, pingMin] = pingConfig.time.split(':').map(Number);
-            const expectedTimeMinutes = pingHour * 60 + pingMin;
-            const [actualHour, actualMin] = pingTimeStr.split(':').map(Number);
-            const actualTimeMinutes = actualHour * 60 + actualMin;
-            const diff = Math.abs(actualTimeMinutes - expectedTimeMinutes);
-            // Allow ±5 minutes tolerance
-            return diff <= 5;
-          });
-
-          if (!isWithinTimeWindow) {
-            return false; // Ping is outside allowed time window
-          }
-        }
-      }
-
-      return true;
+      return byCollege || byProx;
     });
 
     const hasBiometric = validPings.some(p => p.biometricVerified === true);
@@ -632,18 +459,7 @@ const adminSettingsSchema = new mongoose.Schema({
   biometricTriggerMode: { type: String, enum: ['off','pingNumber','time','period'], default: 'pingNumber' },
   biometricAtPingNumber: { type: Number, default: 1 },
   biometricTimeWindows: [{ start: String, end: String }], // HH:mm
-  biometricPeriods: [Number],
-  // Period-based ping configuration
-  collegeTiming: { from: String, to: String }, // HH:mm format
-  numberOfPeriods: { type: Number, default: 8 },
-  defaultPingCount: { type: Number, default: 4 },
-  periodConfig: [{
-    periodNumber: Number,
-    pingCount: Number,
-    pings: [{ type: String, time: String }] // type: 'start'|'after15mins'|'before10mins'|'end', time: 'HH:mm'
-  }],
-  biometricEnabled: { type: Boolean, default: false },
-  biometricTrigger: { type: String, enum: ['start','after15mins','before10mins','end'], default: 'start' }
+  biometricPeriods: [Number]
 });
 const AdminSettings = mongoose.model('AdminSettings', adminSettingsSchema);
 
@@ -719,53 +535,13 @@ app.post('/admin/settings', async (req, res) => {
   }
 });
 
-// Sessions overview - Check actual activity, not just loggedIn flag
+// Sessions overview
 app.get('/admin/sessions', async (_req, res) => {
   try {
     const users = await Student.find({}).select('name regNo username email loggedIn lastLoginAt lastLogoutAt class year').lean();
-    
-    // Check for actual activity: user must have logged in AND have recent activity (ping or login within last 30 minutes)
-    const now = new Date();
-    const activeThreshold = new Date(now.getTime() - 30 * 60 * 1000); // 30 minutes
-    
-    // Get all recent pings in one query for efficiency
-    const recentPings = await Ping.find({ 
-      timestamp: { $gte: activeThreshold } 
-    }).select('studentId').lean();
-    const activeStudentIds = new Set(recentPings.map(p => String(p.studentId)));
-    
-    const actuallyActive = [];
-    const inactive = [];
-    const inactiveUserIds = [];
-    
-    for (const u of users) {
-      // Check if user has recent activity
-      const hasRecentLogin = u.lastLoginAt && new Date(u.lastLoginAt) >= activeThreshold;
-      const hasRecentPing = activeStudentIds.has(String(u._id));
-      
-      // User is considered active only if:
-      // 1. loggedIn flag is true AND
-      // 2. Has recent login (within 30 min) OR has recent ping (within 30 min)
-      if (u.loggedIn && (hasRecentLogin || hasRecentPing)) {
-        actuallyActive.push(u);
-      } else {
-        // If loggedIn is true but no recent activity, mark as inactive
-        if (u.loggedIn && !hasRecentLogin && !hasRecentPing) {
-          inactiveUserIds.push(u._id);
-        }
-        inactive.push({ ...u, loggedIn: false });
-      }
-    }
-    
-    // Batch update all inactive users
-    if (inactiveUserIds.length > 0) {
-      await Student.updateMany(
-        { _id: { $in: inactiveUserIds } },
-        { $set: { loggedIn: false } }
-      );
-    }
-    
-    res.json({ loggedIn: actuallyActive, loggedOut: inactive, total: users.length });
+    const loggedIn = users.filter(u => u.loggedIn);
+    const loggedOut = users.filter(u => !u.loggedIn);
+    res.json({ loggedIn, loggedOut, total: users.length });
   } catch (err) {
     console.error('Admin sessions error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -822,74 +598,9 @@ app.get('/admin/student/:id/history', async (req, res) => {
   }
 });
 
-// Help request endpoint
-app.post('/help/request', async (req, res) => {
+// Notifications (basic: no recent ping)
+app.get('/admin/notifications', async (_req, res) => {
   try {
-    const { studentId, message } = req.body;
-    if (!studentId) return res.status(400).json({ error: 'studentId required' });
-    
-    const student = await Student.findById(studentId);
-    if (!student) return res.status(404).json({ error: 'Student not found' });
-
-    // Check today's attendance status
-    const todayLocal = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-    const todayAttendance = await Attendance.findOne({ studentId, date: todayLocal }).lean();
-    let attendanceStatus = null;
-    if (todayAttendance && todayAttendance.periods && todayAttendance.periods.length > 0) {
-      const presentCount = todayAttendance.periods.filter(p => p.status === 'present').length;
-      attendanceStatus = presentCount === 8 ? 'present' : (presentCount > 0 ? 'partial' : 'absent');
-    } else {
-      attendanceStatus = 'absent';
-    }
-
-    // Check for duplicate help request in last 5 minutes
-    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-    const recentHelpRequest = await Notification.findOne({
-      type: 'helpRequest',
-      studentId: student._id,
-      at: { $gte: fiveMinutesAgo }
-    }).lean();
-
-    if (recentHelpRequest) {
-      return res.status(400).json({ error: 'Please wait before sending another help request' });
-    }
-
-    const helpMessage = message || `${student.name} (${student.regNo}) requested help`;
-    const statusText = attendanceStatus === 'present' ? 'Present' : (attendanceStatus === 'partial' ? 'Partially Present' : 'Absent');
-    
-    const helpNotification = new Notification({
-      type: 'helpRequest',
-      studentId: student._id,
-      studentName: student.name,
-      regNo: student.regNo,
-      message: `${helpMessage} (Status: ${statusText})`,
-      attendanceStatus: attendanceStatus,
-      at: new Date()
-    });
-    await helpNotification.save();
-
-    // Also create a message for the conversation
-    const helpMessageDoc = new Message({
-      studentId: student._id,
-      studentName: student.name,
-      regNo: student.regNo,
-      sender: 'student',
-      message: message || 'Requested help',
-      at: new Date()
-    });
-    await helpMessageDoc.save();
-
-    res.json({ ok: true, message: 'Help request sent successfully', attendanceStatus });
-  } catch (err) {
-    console.error('Help request error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Notifications (all types: online, offline, locationOff, helpRequest, noPing)
-app.get('/admin/notifications', async (req, res) => {
-  try {
-    const { limit = 100 } = req.query;
     const ctrl = await AdminControl.findOne({ key: 'global' }).lean();
     const settings = await AdminSettings.findOne({ key: 'global' }).lean();
     const intervalMs = ctrl?.intervalMs || 60000;
@@ -905,75 +616,19 @@ app.get('/admin/notifications', async (req, res) => {
       return m >= a && m <= b;
     })();
 
-    // Get stored notifications from database (online, offline, locationOff, helpRequest)
-    const storedNotifications = await Notification.find({})
-      .sort({ at: -1 })
-      .limit(Number(limit) * 2) // Get more to filter duplicates
-      .lean();
-
-    // Deduplicate notifications - keep only the most recent of each type+studentId combination within a time window
-    const seen = new Map();
-    const uniqueNotifications = [];
-    for (const n of storedNotifications) {
-      const key = `${n.type}-${String(n.studentId)}`;
-      const timeWindow = 60 * 1000; // 1 minute window for duplicates
-      
-      if (seen.has(key)) {
-        const lastSeen = seen.get(key);
-        const timeDiff = Math.abs(new Date(n.at) - new Date(lastSeen.at));
-        if (timeDiff < timeWindow) {
-          // Skip duplicate within time window
-          continue;
-        }
-      }
-      
-      seen.set(key, n);
-      uniqueNotifications.push(n);
-    }
-
-    const alerts = uniqueNotifications.slice(0, Number(limit)).map(n => ({
-      type: n.type,
-      studentId: String(n.studentId),
-      studentName: n.studentName,
-      regNo: n.regNo,
-      message: n.message,
-      at: n.at,
-      attendanceStatus: n.attendanceStatus || null,
-      _id: String(n._id) // Include ID for reply functionality
-    }));
-
-    // Add noPing notifications if ping is enabled and within window
-    // Deduplicate by checking if we already have a recent noPing for this student
+    const alerts = [];
     if (ctrl?.pingEnabled && withinWindow) {
       const since = new Date(now.getTime() - intervalMs * 2);
       const students = await Student.find({}).select('name regNo username').lean();
-      const noPingSeen = new Set();
-      
       for (const s of students) {
-        const studentIdStr = String(s._id);
-        // Check if we already have a noPing notification for this student in alerts
-        const hasNoPing = alerts.some(a => a.type === 'noPing' && a.studentId === studentIdStr);
-        if (hasNoPing || noPingSeen.has(studentIdStr)) continue;
-        
         const last = await Ping.findOne({ studentId: s._id, timestamp: { $gte: since } }).sort({ timestamp: -1 }).lean();
         if (!last) {
-          noPingSeen.add(studentIdStr);
-          alerts.push({ 
-            type: 'noPing', 
-            studentId: studentIdStr, 
-            studentName: s.name, 
-            regNo: s.regNo, 
-            message: `${s.name} (${s.regNo}) - No recent ping (location off or not in app).`, 
-            at: now 
-          });
+          alerts.push({ type: 'noPing', studentId: String(s._id), studentName: s.name, regNo: s.regNo, message: 'No recent ping (location off or not in app).', at: now });
         }
       }
     }
 
-    // Sort by date (newest first)
-    alerts.sort((a, b) => new Date(b.at) - new Date(a.at));
-
-    res.json({ alerts: alerts.slice(0, Number(limit)) });
+    res.json({ alerts });
   } catch (err) {
     console.error('Admin notifications error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -1029,41 +684,7 @@ app.get('/admin/users', async (req, res) => {
       if (mongoose.Types.ObjectId.isValid(q)) or.push({ _id: q });
       filter = { $or: or };
     }
-    let users = await Student.find(filter).sort({ name: 1 }).lean();
-    
-    // Update loggedIn status based on actual activity (within last 30 minutes)
-    const now = new Date();
-    const activeThreshold = new Date(now.getTime() - 30 * 60 * 1000); // 30 minutes
-    
-    // Get all recent pings in one query for efficiency
-    const recentPings = await Ping.find({ 
-      timestamp: { $gte: activeThreshold } 
-    }).select('studentId').lean();
-    const activeStudentIds = new Set(recentPings.map(p => String(p.studentId)));
-    
-    // Batch update inactive users
-    const inactiveUserIds = [];
-    for (const u of users) {
-      if (u.loggedIn) {
-        // Check if user has recent activity
-        const hasRecentLogin = u.lastLoginAt && new Date(u.lastLoginAt) >= activeThreshold;
-        const hasRecentPing = activeStudentIds.has(String(u._id));
-        
-        // If no recent activity, mark as offline
-        if (!hasRecentLogin && !hasRecentPing) {
-          inactiveUserIds.push(u._id);
-          u.loggedIn = false;
-        }
-      }
-    }
-    
-    // Batch update all inactive users
-    if (inactiveUserIds.length > 0) {
-      await Student.updateMany(
-        { _id: { $in: inactiveUserIds } },
-        { $set: { loggedIn: false } }
-      );
-    }
+    const users = await Student.find(filter).sort({ name: 1 }).lean();
     const safe = users.map(u => { const { password, ...rest } = u; return rest; });
     res.json(safe);
   } catch (err) {
@@ -1263,102 +884,21 @@ async function recomputeAttendanceFor(studentId, dateStr) {
   const collegeAnchor = settings?.collegeLocation?.latitude ? settings.collegeLocation : collegeDefault;
   const proximityAnchor = settings?.proximityLocation;
   const proximityRadius = Number(settings?.proximityRadiusMeters || 100);
-  const MAX_RADIUS_METERS = parseInt(process.env.MAX_RADIUS_METERS || '500', 10); // Default to 500m instead of 50km
+  const MAX_RADIUS_METERS = parseInt(process.env.MAX_RADIUS_METERS || '50000', 10);
   const toRad = (v)=> (v*Math.PI)/180; const R=6371000;
-  const dist=(a,b)=>{ 
-    if (!a || !b || typeof a.latitude !== 'number' || typeof a.longitude !== 'number' ||
-        typeof b.latitude !== 'number' || typeof b.longitude !== 'number') {
-      return Infinity; // Invalid location = infinite distance
-    }
-    const dLat=toRad(a.latitude-b.latitude);
-    const dLon=toRad(a.longitude-b.longitude);
-    const lat1=toRad(b.latitude);
-    const lat2=toRad(a.latitude); 
-    const h=Math.sin(dLat/2)**2+Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2; 
-    return 2*R*Math.atan2(Math.sqrt(h),Math.sqrt(1-h)); 
-  };
-  const pinPoly=(pt,poly)=>{ 
-    if (!pt || !poly || !Array.isArray(poly) || poly.length < 3) return false; 
-    let inside=false; 
-    for(let i=0,j=poly.length-1;i<poly.length;j=i++){
-      const xi=poly[i].latitude, yi=poly[i].longitude; 
-      const xj=poly[j].latitude, yj=poly[j].longitude; 
-      if (typeof xi !== 'number' || typeof yi !== 'number' || typeof xj !== 'number' || typeof yj !== 'number') continue;
-      const intersect=((yi>pt.longitude)!==(yj>pt.longitude)) && (pt.latitude < (xj - xi) * (pt.longitude - yi) / (yj - yi + 1e-12) + xi); 
-      if(intersect) inside=!inside;
-    } 
-    return inside; 
-  };
+  const dist=(a,b)=>{ const dLat=toRad(a.latitude-b.latitude), dLon=toRad(a.longitude-b.longitude); const lat1=toRad(b.latitude), lat2=toRad(a.latitude); const h=Math.sin(dLat/2)**2+Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2; return 2*R*Math.atan2(Math.sqrt(h),Math.sqrt(1-h)); };
+  const pinPoly=(pt,poly)=>{ if(!poly||poly.length<3) return false; let inside=false; for(let i=0,j=poly.length-1;i<poly.length;j=i++){const xi=poly[i].latitude, yi=poly[i].longitude; const xj=poly[j].latitude, yj=poly[j].longitude; const intersect=((yi>pt.longitude)!==(yj>pt.longitude)) && (pt.latitude < (xj - xi) * (pt.longitude - yi) / (yj - yi + 1e-12) + xi); if(intersect) inside=!inside;} return inside; };
   const startDate = new Date(`${dateStr}T00:00:00+05:30`);
   const endDate = new Date(`${dateStr}T23:59:59+05:30`);
   const pings = await Ping.find({ studentId, timestamp: { $gte: startDate, $lte: endDate } }).sort({ timestamp: 1 }).lean();
   const per = {}; // period -> valid pings, biometric flag
   for (const p of pings) {
     const loc = { latitude: p.location?.latitude, longitude: p.location?.longitude };
-    // Validate location
-    if (!loc || typeof loc.latitude !== 'number' || typeof loc.longitude !== 'number' ||
-        isNaN(loc.latitude) || isNaN(loc.longitude)) {
-      continue; // Skip invalid locations
-    }
-    
-    // ALWAYS check college location
-    let byCollege = false;
-    if (Array.isArray(settings?.collegePolygon) && settings.collegePolygon.length >= 3) {
-      byCollege = pinPoly(loc, settings.collegePolygon);
-    } else if (collegeAnchor && typeof collegeAnchor.latitude === 'number' && typeof collegeAnchor.longitude === 'number') {
-      const distance = dist(loc, collegeAnchor);
-      const radiusToUse = settings?.useCollegeLocation !== false ? MAX_RADIUS_METERS : MAX_RADIUS_METERS;
-      byCollege = distance <= radiusToUse;
-    }
-    
-    // Check proximity anchors
-    let byProx = false;
-    if (proximityAnchor && typeof proximityAnchor.latitude === 'number' && typeof proximityAnchor.longitude === 'number') {
-      const distance = dist(loc, proximityAnchor);
-      byProx = distance <= proximityRadius;
-    }
-    if (Array.isArray(settings?.proximityAnchors)) { 
-      for (const a of settings.proximityAnchors) { 
-        if (a?.location?.latitude && a?.location?.longitude && 
-            typeof a.location.latitude === 'number' && typeof a.location.longitude === 'number') {
-          const r = Number(a.radiusMeters || proximityRadius);
-          const distance = dist(loc, a.location);
-          if (distance <= r) { 
-            byProx = true; 
-            break; 
-          }
-        }
-      } 
-    }
+    let byCollege=false; if (settings?.useCollegeLocation){ byCollege = Array.isArray(settings?.collegePolygon) && settings.collegePolygon.length>=3 ? pinPoly(loc, settings.collegePolygon) : (dist(loc, collegeAnchor)<=MAX_RADIUS_METERS); }
+    let byProx=false; if (proximityAnchor) byProx = dist(loc, proximityAnchor) <= proximityRadius && !!student.loggedIn;
+    if (Array.isArray(settings?.proximityAnchors)) { for (const a of settings.proximityAnchors) { if (a?.location?.latitude && dist(loc,a.location)<= (a.radiusMeters||proximityRadius)) { byProx=true; break; } } }
     if (!(byCollege || byProx)) continue;
-
-    // Validate ping time against period configuration
     const k = Number(p.periodNumber)||1;
-    if (settings?.periodConfig && Array.isArray(settings.periodConfig) && settings.periodConfig.length > 0) {
-      const periodConfig = settings.periodConfig.find(per => per.periodNumber === k);
-      if (periodConfig && periodConfig.pings && Array.isArray(periodConfig.pings) && periodConfig.pings.length > 0) {
-        const pingTime = new Date(p.timestamp);
-        const pingTimeIST = new Date(pingTime.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-        const pingTimeStr = `${String(pingTimeIST.getHours()).padStart(2, '0')}:${String(pingTimeIST.getMinutes()).padStart(2, '0')}`;
-        
-        // Check if ping time matches any of the configured ping times (with ±5 minute tolerance)
-        const isWithinTimeWindow = periodConfig.pings.some(pingConfig => {
-          if (!pingConfig.time) return false;
-          const [pingHour, pingMin] = pingConfig.time.split(':').map(Number);
-          const expectedTimeMinutes = pingHour * 60 + pingMin;
-          const [actualHour, actualMin] = pingTimeStr.split(':').map(Number);
-          const actualTimeMinutes = actualHour * 60 + actualMin;
-          const diff = Math.abs(actualTimeMinutes - expectedTimeMinutes);
-          // Allow ±5 minutes tolerance
-          return diff <= 5;
-        });
-
-        if (!isWithinTimeWindow) {
-          continue; // Skip ping outside allowed time window
-        }
-      }
-    }
-
     if (!per[k]) per[k] = { count:0, biometric:false };
     per[k].count += 1; if (p.biometricVerified) per[k].biometric = true;
   }
@@ -1515,32 +1055,15 @@ app.get('/admin/notifications/stream', async (req, res) => {
         const a = sh*60+sm, b = eh*60+em;
         return m >= a && m <= b;
       })();
-      
-      // Get recent stored notifications (last 5 minutes)
-      const recentTime = new Date(now.getTime() - 5 * 60 * 1000);
-      const storedNotifications = await Notification.find({ at: { $gte: recentTime } })
-        .sort({ at: -1 })
-        .lean();
-      
-      const alerts = storedNotifications.map(n => ({
-        type: n.type,
-        studentId: String(n.studentId),
-        studentName: n.studentName,
-        regNo: n.regNo,
-        message: n.message,
-        at: n.at
-      }));
-      
+      const alerts = [];
       if (ctrl?.pingEnabled && withinWindow) {
         const since = new Date(now.getTime() - intervalMs * 2);
         const students = await Student.find({}).select('name regNo username').lean();
         for (const s of students) {
           const last = await Ping.findOne({ studentId: s._id, timestamp: { $gte: since } }).sort({ timestamp: -1 }).lean();
-          if (!last) alerts.push({ type: 'noPing', studentId: String(s._id), studentName: s.name, regNo: s.regNo, message: `${s.name} (${s.regNo}) - No recent ping`, at: now });
+          if (!last) alerts.push({ type: 'noPing', studentId: String(s._id), studentName: s.name, regNo: s.regNo, message: 'No recent ping', at: now });
         }
       }
-      
-      alerts.sort((a, b) => new Date(b.at) - new Date(a.at));
       res.write(`data: ${JSON.stringify({ alerts })}\n\n`);
     } catch (e) {
       res.write(`data: ${JSON.stringify({ alerts: [], error: true })}\n\n`);
@@ -1550,76 +1073,6 @@ app.get('/admin/notifications/stream', async (req, res) => {
   const iv = setInterval(send, 8000);
   send();
   req.on('close', () => clearInterval(iv));
-});
-
-// Message/Reply endpoints
-// Get messages for a student
-app.get('/messages/:studentId', async (req, res) => {
-  try {
-    const { studentId } = req.params;
-    const messages = await Message.find({ studentId })
-      .sort({ at: 1 })
-      .lean();
-    res.json({ messages });
-  } catch (err) {
-    console.error('Get messages error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Get all messages for admin
-app.get('/admin/messages', async (req, res) => {
-  try {
-    const messages = await Message.find({})
-      .sort({ at: -1 })
-      .limit(100)
-      .lean();
-    res.json({ messages });
-  } catch (err) {
-    console.error('Get admin messages error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Send message (student or admin)
-app.post('/messages/send', async (req, res) => {
-  try {
-    const { studentId, sender, message, replyTo } = req.body;
-    if (!studentId || !sender || !message) {
-      return res.status(400).json({ error: 'studentId, sender, and message are required' });
-    }
-
-    const student = await Student.findById(studentId);
-    if (!student) return res.status(404).json({ error: 'Student not found' });
-
-    const messageDoc = new Message({
-      studentId,
-      studentName: student.name,
-      regNo: student.regNo,
-      sender,
-      message,
-      replyTo: replyTo || null,
-      at: new Date()
-    });
-    await messageDoc.save();
-
-    res.json({ ok: true, message: messageDoc });
-  } catch (err) {
-    console.error('Send message error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Mark message as read
-app.patch('/messages/:messageId/read', async (req, res) => {
-  try {
-    const { messageId } = req.params;
-    await Message.findByIdAndUpdate(messageId, { read: true });
-    res.json({ ok: true });
-  } catch (err) {
-    console.error('Mark message read error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
 });
 
 // ------------------- Server Startup -------------------

@@ -16,9 +16,7 @@ import {
   TouchableOpacity,
   Alert,
   Platform,
-  ImageBackground,
-  Modal,
-  TextInput
+  ImageBackground
 } from 'react-native';
 
 const isWeb = Platform.OS === 'web';
@@ -41,9 +39,6 @@ export default function Profile() {
   const [attendanceFrom, setAttendanceFrom] = useState(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toLocaleDateString('en-CA'));
   const [attendanceTo, setAttendanceTo] = useState(new Date().toLocaleDateString('en-CA'));
   const [loadingAttendance, setLoadingAttendance] = useState(false);
-  const [queryModalVisible, setQueryModalVisible] = useState(false);
-  const [queryMessage, setQueryMessage] = useState('');
-  const [messages, setMessages] = useState([]);
 
   // Resolve username either from route or stored user
   useEffect(() => {
@@ -87,25 +82,11 @@ export default function Profile() {
     })();
   }, [userInfo]);
 
-  // Load attendance data on mount and when userInfo changes
+  // Load attendance data
   useEffect(() => {
     if (!userInfo?._id) return;
     loadAttendance();
-    loadMessages();
-  }, [userInfo]);
-
-  const loadMessages = async () => {
-    if (!userInfo?._id) return;
-    try {
-      const res = await fetch(apiUrl(`/messages/${userInfo._id}`));
-      const data = await res.json();
-      if (res.ok) {
-        setMessages(data.messages || []);
-      }
-    } catch (err) {
-      console.error('Failed to load messages:', err);
-    }
-  };
+  }, [userInfo, attendanceFrom, attendanceTo]);
 
   const loadAttendance = async () => {
     if (!userInfo?._id) return;
@@ -124,11 +105,6 @@ export default function Profile() {
 
   const savePhoto = async (uri) => {
     try {
-      if (!uri) {
-        Alert.alert('Error', 'Invalid image URI');
-        return;
-      }
-
       // For web, convert to base64 with compression
       if (Platform.OS === 'web') {
         // Image is already compressed via FileReader
@@ -144,21 +120,15 @@ export default function Profile() {
             await AsyncStorage.setItem(key, uri);
             Alert.alert('Success', 'Profile photo saved successfully');
           } catch (err) {
-            console.error('Save photo error (web):', err);
             if (err.message?.includes('exceeds') || err.message?.includes('QuotaExceeded')) {
               Alert.alert('Error', 'Image is too large. Please choose a smaller image.');
             } else {
-              Alert.alert('Error', `Failed to save photo: ${err.message || 'Unknown error'}`);
+              Alert.alert('Error', 'Failed to save photo');
             }
           }
         }
       } else {
         // For mobile, uri is already optimized by ImagePicker with quality settings
-        if (!uri || typeof uri !== 'string') {
-          Alert.alert('Error', 'Invalid image URI received');
-          return;
-        }
-        
         setPhotoUri(uri);
         if (userInfo) {
           const key = `profilePhoto:${userInfo._id || userInfo.username}`;
@@ -166,18 +136,17 @@ export default function Profile() {
             await AsyncStorage.setItem(key, uri);
             Alert.alert('Success', 'Profile photo saved successfully');
           } catch (err) {
-            console.error('Save photo error (mobile):', err);
             if (err.message?.includes('exceeds') || err.message?.includes('QuotaExceeded')) {
               Alert.alert('Error', 'Image is too large. Please choose a smaller image.');
             } else {
-              Alert.alert('Error', `Failed to save photo: ${err.message || 'Unknown error'}`);
+              Alert.alert('Error', 'Failed to save photo');
             }
           }
         }
       }
     } catch (err) {
       console.error('Save photo error:', err);
-      Alert.alert('Error', `Failed to process image: ${err.message || 'Unknown error'}`);
+      Alert.alert('Error', 'Failed to process image');
     }
   };
 
@@ -201,14 +170,11 @@ export default function Profile() {
         input.click();
         return;
       }
-      // Request permissions
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') { 
-        Alert.alert('Permission required', 'Please allow photo library access in your device settings.'); 
+        Alert.alert('Permission required', 'Please allow photo library access.'); 
         return; 
       }
-      
-      // Launch image picker
       const result = await ImagePicker.launchImageLibraryAsync({ 
         mediaTypes: ImagePicker.MediaTypeOptions.Images, 
         allowsEditing: true, 
@@ -216,27 +182,12 @@ export default function Profile() {
         aspect: [1, 1], // Square aspect ratio
         base64: false, // Don't include base64 to reduce memory
       });
-      
-      if (result.canceled) {
-        return; // User cancelled, no error
+      if (!result.canceled && result.assets?.length) {
+        await savePhoto(result.assets[0].uri);
       }
-      
-      if (!result.assets || result.assets.length === 0) {
-        Alert.alert('Error', 'No image was selected');
-        return;
-      }
-      
-      const asset = result.assets[0];
-      if (!asset.uri) {
-        Alert.alert('Error', 'Image URI is missing. Please try again.');
-        return;
-      }
-      
-      await savePhoto(asset.uri);
     } catch (e) { 
       console.error('Gallery pick error:', e);
-      const errorMessage = e?.message || e?.toString() || 'Unknown error';
-      Alert.alert('Error', `Failed to pick image from gallery: ${errorMessage}`);
+      Alert.alert('Error', 'Failed to pick image from gallery');
     }
   };
 
@@ -317,46 +268,6 @@ export default function Profile() {
     } else {
       Alert.alert('Export', 'CSV export is available on web platform');
     }
-  };
-
-  const handleHelpRequest = async () => {
-    if (!userInfo?._id) {
-      Alert.alert('Error', 'User information not available');
-      return;
-    }
-
-    Alert.alert(
-      'Request Help',
-      'Do you want to send a help request to the admin?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Send',
-          onPress: async () => {
-            try {
-              const response = await fetch(apiUrl('/help/request'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  studentId: userInfo._id,
-                  message: `${userInfo.name} (${userInfo.regNo}) requested help`
-                })
-              });
-
-              const data = await response.json();
-              if (response.ok) {
-                Alert.alert('Success', 'Help request sent successfully. Admin will be notified.');
-              } else {
-                Alert.alert('Error', data.error || 'Failed to send help request');
-              }
-            } catch (err) {
-              console.error('Help request error:', err);
-              Alert.alert('Error', 'Failed to send help request. Please try again.');
-            }
-          }
-        }
-      ]
-    );
   };
 
   if (loading) {
@@ -514,9 +425,6 @@ export default function Profile() {
                     onChange={e => setAttendanceTo(e.target.value)} 
                     style={styles.dateInput} 
                   />
-                  <TouchableOpacity onPress={loadAttendance} style={styles.applyButton}>
-                    <Text style={styles.applyButtonText}>Apply Filter</Text>
-                  </TouchableOpacity>
                 </>
               ) : (
                 <>
@@ -524,9 +432,6 @@ export default function Profile() {
                   <Text style={styles.filterValue}>{attendanceFrom}</Text>
                   <Text style={styles.filterText}>To:</Text>
                   <Text style={styles.filterValue}>{attendanceTo}</Text>
-                  <TouchableOpacity onPress={loadAttendance} style={styles.applyButton}>
-                    <Text style={styles.applyButtonText}>Apply</Text>
-                  </TouchableOpacity>
                 </>
               )}
             </View>
@@ -593,105 +498,8 @@ export default function Profile() {
               </View>
             )}
           </View>
-
-          {/* Help Section */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Need Help?</Text>
-            <View style={styles.helpButtonsRow}>
-              <TouchableOpacity onPress={handleHelpRequest} style={styles.helpButton}>
-                <Ionicons name="help-circle-outline" size={24} color="#fff" />
-                <Text style={styles.helpButtonText}>Request Help</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setQueryModalVisible(true)} style={[styles.helpButton, { backgroundColor: '#3b82f6' }]}>
-                <Ionicons name="chatbubble-outline" size={24} color="#fff" />
-                <Text style={styles.helpButtonText}>Send Query</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
         </ScrollView>
       </View>
-
-      {/* Query/Message Modal */}
-      <Modal
-        visible={queryModalVisible}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setQueryModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Send Query to Admin</Text>
-              <TouchableOpacity onPress={() => setQueryModalVisible(false)}>
-                <Ionicons name="close" size={24} color="#fff" />
-              </TouchableOpacity>
-            </View>
-            
-            {/* Messages List */}
-            {messages.length > 0 && (
-              <ScrollView style={styles.messagesList}>
-                {messages.map((msg, idx) => (
-                  <View key={idx} style={[styles.messageBubble, msg.sender === 'admin' ? styles.messageAdmin : styles.messageStudent]}>
-                    <Text style={styles.messageSender}>{msg.sender === 'admin' ? 'Admin' : 'You'}</Text>
-                    <Text style={styles.messageText}>{msg.message}</Text>
-                    <Text style={styles.messageTime}>{new Date(msg.at).toLocaleString()}</Text>
-                  </View>
-                ))}
-              </ScrollView>
-            )}
-
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Type your query..."
-              multiline
-              numberOfLines={4}
-              value={queryMessage}
-              onChangeText={setQueryMessage}
-            />
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.helpButton, { backgroundColor: '#64748b', marginTop: 0 }]}
-                onPress={() => setQueryModalVisible(false)}
-              >
-                <Text style={styles.helpButtonText}>Close</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.helpButton, { backgroundColor: '#3b82f6', marginTop: 0 }]}
-                onPress={async () => {
-                  if (!queryMessage.trim()) {
-                    Alert.alert('Error', 'Please enter a message');
-                    return;
-                  }
-                  try {
-                    const response = await fetch(apiUrl('/messages/send'), {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        studentId: userInfo._id,
-                        sender: 'student',
-                        message: queryMessage
-                      })
-                    });
-                    const data = await response.json();
-                    if (response.ok) {
-                      Alert.alert('Success', 'Query sent successfully');
-                      setQueryMessage('');
-                      await loadMessages();
-                    } else {
-                      Alert.alert('Error', data.error || 'Failed to send query');
-                    }
-                  } catch (err) {
-                    console.error('Send query error:', err);
-                    Alert.alert('Error', 'Failed to send query');
-                  }
-                }}
-              >
-                <Text style={styles.helpButtonText}>Send</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </ImageBackground>
   );
 }
@@ -917,114 +725,5 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: '600',
-  },
-  applyButton: {
-    backgroundColor: '#60a5fa',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    marginLeft: 10,
-  },
-  applyButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  helpButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#f59e0b',
-    paddingVertical: 15,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    gap: 10,
-    marginTop: 10,
-  },
-  helpButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  helpButtonsRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 10,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContent: {
-    backgroundColor: 'rgba(0,0,0,0.9)',
-    borderRadius: 16,
-    padding: 20,
-    width: Platform.OS === 'web' ? 500 : '90%',
-    maxWidth: 500,
-    maxHeight: '80%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  messagesList: {
-    maxHeight: 200,
-    marginBottom: 16,
-    padding: 10,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 8,
-  },
-  messageBubble: {
-    padding: 10,
-    borderRadius: 8,
-    marginBottom: 8,
-  },
-  messageAdmin: {
-    backgroundColor: 'rgba(59, 130, 246, 0.3)',
-    alignSelf: 'flex-start',
-  },
-  messageStudent: {
-    backgroundColor: 'rgba(16, 185, 129, 0.3)',
-    alignSelf: 'flex-end',
-  },
-  messageSender: {
-    color: '#60a5fa',
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  messageText: {
-    color: '#fff',
-    fontSize: 14,
-    marginBottom: 4,
-  },
-  messageTime: {
-    color: '#aaa',
-    fontSize: 10,
-  },
-  modalInput: {
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
-    borderRadius: 8,
-    padding: 12,
-    minHeight: 100,
-    textAlignVertical: 'top',
-    marginBottom: 16,
-    color: '#fff',
-    backgroundColor: 'rgba(255,255,255,0.1)',
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    gap: 12,
-    justifyContent: 'flex-end',
   },
 });

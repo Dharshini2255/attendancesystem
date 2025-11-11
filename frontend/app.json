@@ -1,4 +1,5 @@
-  {"expo": {
+{
+  "expo": {
     "name": "MyMobileApp",
     "slug": "MyMobileApp",
     "version": "1.0.0",
@@ -14,9 +15,7 @@
           "location"
         ],
         "NSLocationAlwaysUsageDescription": "We use your location to track attendance.",
-        "NSLocationWhenInUseUsageDescription": "We use your location to track attendance.",
-        "NSPhotoLibraryUsageDescription": "We need access to your photo library to set your profile picture.",
-        "NSCameraUsageDescription": "We need access to your camera to take a profile picture."
+        "NSLocationWhenInUseUsageDescription": "We use your location to track attendance."
       }
     },
     "android": {
@@ -30,11 +29,7 @@
         "ACCESS_COARSE_LOCATION",
         "ACCESS_BACKGROUND_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE",
-        "READ_MEDIA_IMAGES",
-        "CAMERA"
+        "android.permission.ACCESS_FINE_LOCATION"
       ],
       "package": "com.dharshini_2255.MyMobileApp"
     },
@@ -60,13 +55,6 @@
         {
           "locationAlwaysAndWhenInUsePermission": "Allow location access to track attendance even when the app is in background."
         }
-      ],
-      [
-        "expo-image-picker",
-        {
-          "photosPermission": "The app accesses your photos to let you set your profile picture.",
-          "cameraPermission": "The app accesses your camera to let you take a profile picture."
-        }
       ]
     ],
     "experiments": {
@@ -80,4 +68,4 @@
     },
     "owner": "dharshini_2255"
   }
-  }
+}

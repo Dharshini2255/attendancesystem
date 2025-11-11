@@ -1,7 +1,7 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Alert, ScrollView, StyleSheet, Text, View, TouchableOpacity, Platform, TextInput, Switch, useWindowDimensions, Linking, Modal } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, View, TouchableOpacity, Platform, TextInput, Switch, useWindowDimensions, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { Image } from 'expo-image';
@@ -45,10 +45,6 @@ export default function AdminDashboard() {
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [mapRegion, setMapRegion] = useState(null);
   const [mapWebZoom, setMapWebZoom] = useState(9);
-  const [replyModalVisible, setReplyModalVisible] = useState(false);
-  const [replyStudentId, setReplyStudentId] = useState(null);
-  const [replyStudentName, setReplyStudentName] = useState(null);
-  const [replyMessage, setReplyMessage] = useState('');
 
   useEffect(() => {
     (async () => {
@@ -156,7 +152,7 @@ export default function AdminDashboard() {
         return;
       }
       const data = await res.json();
-      
+     
       if (useToday) {
         // For dashboard, only update locations, don't replace all pings
         const locations = {};
@@ -248,26 +244,14 @@ export default function AdminDashboard() {
   };
 
   const readSettings = async () => {
-    try { 
-      const res = await fetch(apiUrl('/admin/settings')); 
+    try {
+      const res = await fetch(apiUrl('/admin/settings'));
       if (!res.ok) {
         console.error('Failed to load settings:', res.status, res.statusText);
         return;
       }
       const data = await res.json();
-      // Initialize period config if it doesn't exist
-      if (!data.periodConfig || data.periodConfig.length === 0) {
-        const numPeriods = data.numberOfPeriods || 8;
-        const pingCount = data.defaultPingCount || 4;
-        const collegeTiming = data.collegeTiming || { from: '09:00', to: '17:00' };
-        const periods = Array.from({length: numPeriods}, (_, i) => ({
-          periodNumber: i + 1,
-          pings: generatePingTimes(i + 1, pingCount, collegeTiming, numPeriods),
-          pingCount: pingCount
-        }));
-        data.periodConfig = periods;
-      }
-      setSettings(prev => ({ ...prev, ...data })); 
+      setSettings(prev => ({ ...prev, ...data }));
       console.log('Loaded settings:', data);
     } catch (err) {
       console.error('Error loading settings:', err);
@@ -275,8 +259,8 @@ export default function AdminDashboard() {
   };
 
   const saveSettings = async () => {
-    try { 
-      const res = await fetch(apiUrl('/admin/settings'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) }); 
+    try {
+      const res = await fetch(apiUrl('/admin/settings'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) });
       if (!res.ok) {
         console.error('Failed to save settings:', res.status, res.statusText);
         Alert.alert('Error', 'Failed to save settings');
@@ -290,15 +274,15 @@ export default function AdminDashboard() {
   };
 
   const loadNotifications = async () => {
-    try { 
-      const res = await fetch(apiUrl('/admin/notifications')); 
+    try {
+      const res = await fetch(apiUrl('/admin/notifications'));
       if (!res.ok) {
         console.error('Failed to load notifications:', res.status, res.statusText);
         setNotifications([]);
         return;
       }
-      const data = await res.json(); 
-      setNotifications(data.alerts || []); 
+      const data = await res.json();
+      setNotifications(data.alerts || []);
       console.log('Loaded notifications:', data.alerts?.length || 0);
     } catch (err) {
       console.error('Error loading notifications:', err);
@@ -351,17 +335,11 @@ export default function AdminDashboard() {
     return by;
   }, [onlineUsers]);
 
-  // Customizable dashboard visualization controls
-  const [dashboardCharts, setDashboardCharts] = useState([]); // Start with no charts
-  const [dashboardDateRange, setDashboardDateRange] = useState({ from: from, to: to });
-  const [showChartConfig, setShowChartConfig] = useState(false);
-  const [newChartConfig, setNewChartConfig] = useState({
-    dataSources: [],
-    chartType: null,
-    title: 'New Chart',
-    dateFilter: 'all', // all, day, month, year
-    userFilter: null, // for specific user attendance
-  });
+  // Visualization controls
+  const [vizType, setVizType] = useState('bar'); // bar | donut | line | pie | histogram | clustered | stacked
+  const [vizCategory, setVizCategory] = useState('class'); // users|departments|year|class|overall
+  const [searchName, setSearchName] = useState('');
+  const [selectedUser, setSelectedUser] = useState(null);
 
   const usersByReg = useMemo(() => { const m = {}; (users||[]).forEach(u => { if (u?.regNo) m[u.regNo] = u; }); return m; }, [users]);
   const recentPings = useMemo(() => (pings||[]).filter(p => {
@@ -395,16 +373,16 @@ export default function AdminDashboard() {
 
   // Chart rendering functions
   const palette = ['#14b8a6', '#ef4444', '#fbbf24', '#1f2937', '#8b5cf6', '#22d3ee', '#84cc16', '#fb7185'];
-  
+ 
   const renderDonutChart = (data, label) => {
     const entries = Object.entries(data);
     if (entries.length === 0) return <Text style={styles.muted}>No data</Text>;
     const total = entries.reduce((s, [, v]) => s + v, 0);
     if (total === 0) return <Text style={styles.muted}>No data</Text>;
-    
+   
     const chartSize = 120;
     const maxEntry = Math.max(...entries.map(([, v]) => v));
-    
+   
     return (
       <View style={{ alignItems: 'center', gap: 8 }}>
         <View style={{ width: chartSize, height: chartSize, position: 'relative', justifyContent: 'center', alignItems: 'center' }}>
@@ -429,8 +407,8 @@ export default function AdminDashboard() {
               );
             })}
             <View style={{ width: chartSize * 0.5, height: chartSize * 0.5, borderRadius: chartSize * 0.25, backgroundColor: '#ffffff', justifyContent: 'center', alignItems: 'center', position: 'absolute' }}>
-              <Text style={[{ fontSize: 18, fontWeight: '800', color: '#0f172a' }, textStyle]}>{total}</Text>
-              <Text style={[{ fontSize: 10, color: '#64748b' }, textStyle]}>Total</Text>
+              <Text style={{ fontSize: 18, fontWeight: '800', color: '#0f172a' }}>{total}</Text>
+              <Text style={{ fontSize: 10, color: '#64748b' }}>Total</Text>
             </View>
           </View>
         </View>
@@ -438,7 +416,7 @@ export default function AdminDashboard() {
           {entries.map(([name, val], idx) => (
             <View key={name} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
               <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: palette[idx % palette.length] }} />
-              <Text style={[{ fontSize: 11, color: '#0f172a' }, textStyle]}>{name}: {val}</Text>
+              <Text style={{ fontSize: 11, color: '#0f172a' }}>{name}: {val}</Text>
             </View>
           ))}
         </View>
@@ -451,7 +429,7 @@ export default function AdminDashboard() {
     if (entries.length === 0) return <Text style={styles.muted}>No data</Text>;
     const total = entries.reduce((s, [, v]) => s + v, 0);
     if (total === 0) return <Text style={styles.muted}>No data</Text>;
-    
+   
     return (
       <View style={{ gap: 8 }}>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'center' }}>
@@ -460,10 +438,10 @@ export default function AdminDashboard() {
             return (
               <View key={name} style={{ alignItems: 'center' }}>
                 <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: palette[idx % palette.length], opacity: 0.8, justifyContent: 'center', alignItems: 'center' }}>
-                  <Text style={[{ fontSize: 14, fontWeight: '800', color: '#fff' }, textStyle]}>{Math.round(percentage)}%</Text>
+                  <Text style={{ fontSize: 14, fontWeight: '800', color: '#fff' }}>{Math.round(percentage)}%</Text>
                 </View>
-                <Text style={[{ fontSize: 11, marginTop: 4, color: '#0f172a', textAlign: 'center' }, textStyle]}>{name}</Text>
-                <Text style={[{ fontSize: 10, color: '#64748b' }, textStyle]}>{val}</Text>
+                <Text style={{ fontSize: 11, marginTop: 4, color: '#0f172a', textAlign: 'center' }}>{name}</Text>
+                <Text style={{ fontSize: 10, color: '#64748b' }}>{val}</Text>
               </View>
             );
           })}
@@ -477,7 +455,7 @@ export default function AdminDashboard() {
     if (entries.length === 0) return <Text style={styles.muted}>No data</Text>;
     const max = Math.max(1, ...entries.map(([, v]) => v));
     const chartHeight = 200;
-    
+   
     // Calculate offline counts
     const offlineData = {};
     entries.forEach(([key]) => {
@@ -486,7 +464,7 @@ export default function AdminDashboard() {
     });
     const maxOffline = Math.max(1, ...Object.values(offlineData));
     const maxTotal = Math.max(max, maxOffline);
-    
+   
     return (
       <View style={{ gap: 8 }}>
         <View style={{ flexDirection: 'row', gap: 4, alignItems: 'flex-end', height: chartHeight, paddingHorizontal: 8 }}>
@@ -502,8 +480,8 @@ export default function AdminDashboard() {
                     <View style={{ width: '50%', height: offlineHeight, backgroundColor: palette[1], borderRadius: 4, minHeight: 4 }} />
                   </View>
                 </View>
-                <Text style={[{ fontSize: 10, color: '#0f172a', marginTop: 4, textAlign: 'center' }, textStyle]} numberOfLines={1}>{name}</Text>
-                <Text style={[{ fontSize: 9, color: '#64748b' }, textStyle]}>{onlineVal + offlineVal}</Text>
+                <Text style={{ fontSize: 10, color: '#0f172a', marginTop: 4, textAlign: 'center' }} numberOfLines={1}>{name}</Text>
+                <Text style={{ fontSize: 9, color: '#64748b' }}>{onlineVal + offlineVal}</Text>
               </View>
             );
           })}
@@ -511,11 +489,11 @@ export default function AdminDashboard() {
         <View style={{ flexDirection: 'row', gap: 12, justifyContent: 'center', marginTop: 8 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
             <View style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: palette[0] }} />
-            <Text style={[{ fontSize: 11, color: '#0f172a' }, textStyle]}>Online</Text>
+            <Text style={{ fontSize: 11, color: '#0f172a' }}>Online</Text>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
             <View style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: palette[1] }} />
-            <Text style={[{ fontSize: 11, color: '#0f172a' }, textStyle]}>Offline</Text>
+            <Text style={{ fontSize: 11, color: '#0f172a' }}>Offline</Text>
           </View>
         </View>
       </View>
@@ -537,14 +515,14 @@ export default function AdminDashboard() {
         byMonth[month].absent += (r.absent || 0);
       }
     });
-    
+   
     const entries = Object.entries(byMonth).sort();
     if (entries.length === 0) return <Text style={styles.muted}>No data</Text>;
-    
+   
     const max = Math.max(1, ...entries.map(([, v]) => v.present + v.absent));
     const chartHeight = 200;
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    
+   
     return (
       <View style={{ gap: 8 }}>
         <View style={{ flexDirection: 'row', gap: 4, alignItems: 'flex-end', height: chartHeight, paddingHorizontal: 8 }}>
@@ -558,7 +536,7 @@ export default function AdminDashboard() {
                   <View style={{ width: '100%', height: presentHeight, backgroundColor: palette[0], borderRadius: 2, minHeight: 2 }} />
                   <View style={{ width: '100%', height: absentHeight, backgroundColor: palette[1], borderRadius: 2, minHeight: 2 }} />
                 </View>
-                <Text style={[{ fontSize: 9, color: '#0f172a', marginTop: 4 }, textStyle]}>{monthNames[monthNum] || month.split('-')[1]}</Text>
+                <Text style={{ fontSize: 9, color: '#0f172a', marginTop: 4 }}>{monthNames[monthNum] || month.split('-')[1]}</Text>
               </View>
             );
           })}
@@ -566,11 +544,11 @@ export default function AdminDashboard() {
         <View style={{ flexDirection: 'row', gap: 12, justifyContent: 'center', marginTop: 8 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
             <View style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: palette[0] }} />
-            <Text style={[{ fontSize: 11, color: '#0f172a' }, textStyle]}>Present</Text>
+            <Text style={{ fontSize: 11, color: '#0f172a' }}>Present</Text>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
             <View style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: palette[1] }} />
-            <Text style={[{ fontSize: 11, color: '#0f172a' }, textStyle]}>Absent</Text>
+            <Text style={{ fontSize: 11, color: '#0f172a' }}>Absent</Text>
           </View>
         </View>
       </View>
@@ -591,14 +569,14 @@ export default function AdminDashboard() {
         byDate[date].absent += (r.absent || 0);
       }
     });
-    
+   
     const entries = Object.entries(byDate).sort().slice(-30); // Last 30 days
     if (entries.length === 0) return <Text style={styles.muted}>No data</Text>;
-    
+   
     const max = Math.max(1, ...entries.map(([, v]) => v.present + v.absent));
     const chartHeight = 200;
     const chartWidth = entries.length * 8;
-    
+   
     return (
       <View style={{ gap: 8 }}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -657,7 +635,7 @@ export default function AdminDashboard() {
             )}
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: chartHeight + 8 }}>
               {entries.filter((_, idx) => idx % Math.ceil(entries.length / 5) === 0).map(([date]) => (
-                <Text key={date} style={[{ fontSize: 9, color: '#64748b' }, textStyle]}>{date.split('-')[2]}</Text>
+                <Text key={date} style={{ fontSize: 9, color: '#64748b' }}>{date.split('-')[2]}</Text>
               ))}
             </View>
           </View>
@@ -680,7 +658,7 @@ export default function AdminDashboard() {
     // Create bins for attendance percentage
     const bins = [0, 20, 40, 60, 80, 100];
     const binCounts = new Array(bins.length - 1).fill(0);
-    
+   
     // Group by student
     const byStudent = {};
     (attRows || []).forEach(r => {
@@ -689,7 +667,7 @@ export default function AdminDashboard() {
       if (r.status === 'present') byStudent[sid].present += 1;
       byStudent[sid].total += 1;
     });
-    
+   
     Object.values(byStudent).forEach(student => {
       if (student.total === 0) return;
       const percentage = (student.present / student.total) * 100;
@@ -700,18 +678,18 @@ export default function AdminDashboard() {
         }
       }
     });
-    
+   
     const max = Math.max(1, ...binCounts);
     const chartHeight = 150;
-    
+   
     return (
       <View style={{ gap: 8 }}>
         <View style={{ flexDirection: 'row', gap: 4, alignItems: 'flex-end', height: chartHeight }}>
           {binCounts.map((count, idx) => (
             <View key={idx} style={{ flex: 1, alignItems: 'center' }}>
               <View style={{ width: '90%', height: (count / max) * chartHeight, backgroundColor: palette[idx % palette.length], borderRadius: 4, minHeight: 4 }} />
-              <Text style={[{ fontSize: 9, color: '#0f172a', marginTop: 4 }, textStyle]}>{bins[idx]}-{bins[idx + 1]}%</Text>
-              <Text style={[{ fontSize: 10, fontWeight: '700', color: '#0f172a' }, textStyle]}>{count}</Text>
+              <Text style={{ fontSize: 9, color: '#0f172a', marginTop: 4 }}>{bins[idx]}-{bins[idx + 1]}%</Text>
+              <Text style={{ fontSize: 10, fontWeight: '700', color: '#0f172a' }}>{count}</Text>
             </View>
           ))}
         </View>
@@ -723,14 +701,14 @@ export default function AdminDashboard() {
     const entries = Object.entries(data).sort((a, b) => b[1] - a[1]);
     if (entries.length === 0) return <Text style={styles.muted}>No data</Text>;
     const max = Math.max(1, ...entries.map(([, v]) => v));
-    
+   
     return (
       <View style={{ gap: 8 }}>
         {entries.map(([name, val], idx) => (
           <View key={name} style={{ gap: 4 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={[{ fontSize: 12, color: '#0f172a', flex: 1 }, textStyle]} numberOfLines={1}>{name}</Text>
-              <Text style={[{ fontSize: 12, fontWeight: '700', color: '#0f172a', marginLeft: 8 }, textStyle]}>{val}</Text>
+              <Text style={{ fontSize: 12, color: '#0f172a', flex: 1 }} numberOfLines={1}>{name}</Text>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: '#0f172a', marginLeft: 8 }}>{val}</Text>
             </View>
             <View style={styles.chartBar}>
               <View style={[styles.chartSegment, { width: `${Math.round((val / max) * 100)}%`, backgroundColor: palette[idx % palette.length] }]} />
@@ -743,7 +721,7 @@ export default function AdminDashboard() {
 
   const exportDashboardData = () => {
     if (Platform.OS !== 'web') return;
-    
+   
     const data = {
       overallAttendance: attendancePercent,
       totalStudents: users?.length || 0,
@@ -754,7 +732,7 @@ export default function AdminDashboard() {
       byYear: groupOnlineBy.year,
       attendanceRows: attRows.slice(0, 1000), // Limit to prevent huge files
     };
-    
+   
     const csv = [
       ['Metric', 'Value'].join(','),
       ['Overall Attendance %', attendancePercent].join(','),
@@ -771,7 +749,7 @@ export default function AdminDashboard() {
       ['Year', 'Online Count'].join(','),
       ...Object.entries(groupOnlineBy.year).map(([k, v]) => [k, v].join(',')),
     ].join('\n');
-    
+   
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -783,69 +761,8 @@ export default function AdminDashboard() {
     URL.revokeObjectURL(url);
   };
 
-  // Helper functions for period-based ping configuration
-  const getPingOptions = (pingCount) => {
-    if (pingCount === 1) return [{ key: 'start', label: 'Start' }];
-    if (pingCount === 2) return [{ key: 'start', label: 'Start' }, { key: 'end', label: 'End' }];
-    if (pingCount === 3) return [{ key: 'start', label: 'Start' }, { key: 'after15mins', label: 'After 15mins' }, { key: 'end', label: 'End' }];
-    if (pingCount === 4) return [
-      { key: 'start', label: 'Start' },
-      { key: 'after15mins', label: 'After 15mins' },
-      { key: 'before10mins', label: 'Before 10mins' },
-      { key: 'end', label: 'End' }
-    ];
-    return [];
-  };
-
-  const getBiometricOptions = (pingCount) => {
-    if (pingCount === 1) return ['start'];
-    if (pingCount === 2) return ['start', 'end'];
-    if (pingCount === 3) return ['start', 'after15mins', 'end'];
-    if (pingCount === 4) return ['start', 'after15mins', 'before10mins', 'end'];
-    return ['start', 'end'];
-  };
-
-  const generatePingTimes = (periodNumber, pingCount, collegeTiming, numberOfPeriods) => {
-    if (!collegeTiming?.from || !collegeTiming?.to) return [];
-    const [fromHour, fromMin] = collegeTiming.from.split(':').map(Number);
-    const [toHour, toMin] = collegeTiming.to.split(':').map(Number);
-    const totalMinutes = (toHour * 60 + toMin) - (fromHour * 60 + fromMin);
-    const periodDuration = totalMinutes / numberOfPeriods;
-    const periodStart = fromHour * 60 + fromMin + (periodNumber - 1) * periodDuration;
-    const periodEnd = periodStart + periodDuration;
-
-    const pings = [];
-    if (pingCount >= 1) pings.push({ type: 'start', time: `${Math.floor(periodStart / 60)}:${String(Math.floor(periodStart % 60)).padStart(2, '0')}` });
-    if (pingCount >= 3) pings.push({ type: 'after15mins', time: `${Math.floor((periodStart + 15) / 60)}:${String(Math.floor((periodStart + 15) % 60)).padStart(2, '0')}` });
-    if (pingCount >= 4) pings.push({ type: 'before10mins', time: `${Math.floor((periodEnd - 10) / 60)}:${String(Math.floor((periodEnd - 10) % 60)).padStart(2, '0')}` });
-    if (pingCount >= 2) pings.push({ type: 'end', time: `${Math.floor(periodEnd / 60)}:${String(Math.floor(periodEnd % 60)).padStart(2, '0')}` });
-    
-    return pings;
-  };
-
-  // Initialize period config when settings are loaded (only once)
-  useEffect(() => {
-    if (settings && !settings.periodConfig && (settings.numberOfPeriods || settings.defaultPingCount || settings.collegeTiming)) {
-      const numPeriods = settings.numberOfPeriods || 8;
-      const pingCount = settings.defaultPingCount || 4;
-      const collegeTiming = settings.collegeTiming || { from: '09:00', to: '17:00' };
-      const periods = Array.from({length: numPeriods}, (_, i) => ({
-        periodNumber: i + 1,
-        pings: generatePingTimes(i + 1, pingCount, collegeTiming, numPeriods),
-        pingCount: pingCount
-      }));
-      // Only update if periodConfig doesn't exist
-      if (!settings.periodConfig || settings.periodConfig.length === 0) {
-        setSettings(prev => ({ ...prev, periodConfig: periods }));
-      }
-    }
-  }, [settings?.numberOfPeriods, settings?.defaultPingCount, settings?.collegeTiming, settings?.periodConfig?.length]);
-
-  // Global text style with Times New Roman
-  const textStyle = { fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' };
-
   if (!authorized) {
-    return <View style={[styles.fill, styles.bg]}><Text style={[{ color: '#1f2937' }, textStyle]}>Checking admin access…</Text></View>;
+    return <View style={[styles.fill, styles.bg]}><Text style={{ color: '#1f2937' }}>Checking admin access…</Text></View>;
   }
 
   const NavItem = ({ active, label, onPress, big=false }) => (
@@ -910,447 +827,101 @@ export default function AdminDashboard() {
             <Panel style={styles.centerCol}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                 <Text style={styles.panelTitle}>Attendance Analytics Overview</Text>
-                <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-                  <TouchableOpacity onPress={() => setShowChartConfig(!showChartConfig)} style={[styles.secondaryBtn, { marginTop: 0, flexDirection: 'row', alignItems: 'center', gap: 6 }]}>
-                    <Ionicons name="settings-outline" size={16} color="#0f172a" />
-                    <Text style={styles.secondaryBtnText}>Configure</Text>
+                {Platform.OS === 'web' && (
+                  <TouchableOpacity onPress={exportDashboardData} style={styles.exportButton}>
+                    <Ionicons name="download-outline" size={16} color="#fff" />
+                    <Text style={styles.exportButtonText}>Export Dashboard</Text>
                   </TouchableOpacity>
-                  {Platform.OS === 'web' && (
-                    <TouchableOpacity onPress={exportDashboardData} style={styles.exportButton}>
-                      <Ionicons name="download-outline" size={16} color="#fff" />
-                      <Text style={[styles.exportButtonText, { color: '#fff' }]}>Export</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
+                )}
               </View>
-
-              {/* Configuration Panel */}
-              {showChartConfig && (
-                <View style={[styles.chartCard, { marginBottom: 16, backgroundColor: '#f8fafc', position: 'relative' }]}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                    <Text style={styles.chartTitle}>Dashboard Configuration</Text>
-                    <TouchableOpacity onPress={() => setShowChartConfig(false)} style={{ padding: 4 }}>
-                      <Ionicons name="close" size={24} color="#0f172a" />
-                    </TouchableOpacity>
-                  </View>
-
-                  <View style={{ gap: 20 }}>
-                    {/* Data Category Selection */}
-                    <View>
-                      <Text style={[styles.muted, { fontSize: 16, fontWeight: '700', marginBottom: 12 }]}>Data's Category</Text>
-                      <View style={{ gap: 8 }}>
-                        {[
-                          { key: 'name', label: 'Name' },
-                          { key: 'class', label: 'Class' },
-                          { key: 'department', label: 'Department' },
-                          { key: 'year', label: 'Year' },
-                          { key: 'activeUsers', label: 'Active Users' },
-                          { key: 'offlineUsers', label: 'Offline Users' },
-                          { key: 'userAttendance', label: 'Attendance of a particular user' },
-                          { key: 'dateAttendance', label: 'Attendance by date, day, month, year' },
-                        ].map(item => (
-                          <View key={item.key} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 8, backgroundColor: '#fff', borderRadius: 8 }}>
-                            <Switch
-                              value={newChartConfig.dataSources.includes(item.key)}
-                              onValueChange={(val) => {
-                                if (val) {
-                                  setNewChartConfig({ ...newChartConfig, dataSources: [...newChartConfig.dataSources, item.key] });
-                                } else {
-                                  setNewChartConfig({ ...newChartConfig, dataSources: newChartConfig.dataSources.filter(ds => ds !== item.key) });
-                                }
-                              }}
-                            />
-                            <Text style={[textStyle, { flex: 1 }]}>{item.label}</Text>
-                            {item.key === 'userAttendance' && newChartConfig.dataSources.includes('userAttendance') && (
-                              <View style={{ flex: 1 }}>
-                                {Platform.OS === 'web' ? (
-                                  <select
-                                    value={newChartConfig.userFilter || ''}
-                                    onChange={e => setNewChartConfig({ ...newChartConfig, userFilter: e.target.value })}
-                                    style={styles.webInput}
-                                  >
-                                    <option value="">Select User</option>
-                                    {(users || []).map(u => (
-                                      <option key={u._id} value={u._id}>{u.name} ({u.regNo})</option>
-                                    ))}
-                                  </select>
-                                ) : (
-                                  <TextInput
-                                    value={newChartConfig.userFilter || ''}
-                                    onChangeText={t => setNewChartConfig({ ...newChartConfig, userFilter: t })}
-                                    style={styles.input}
-                                    placeholder="Enter user name or reg no"
-                                  />
-                                )}
-                              </View>
-                            )}
-                            {item.key === 'dateAttendance' && newChartConfig.dataSources.includes('dateAttendance') && (
-                              <View style={{ flex: 1, gap: 4 }}>
-                                <View style={{ flexDirection: 'row', gap: 4 }}>
-                                  {['all', 'day', 'month', 'year'].map(opt => (
-                                    <TouchableOpacity
-                                      key={opt}
-                                      onPress={() => setNewChartConfig({ ...newChartConfig, dateFilter: opt })}
-                                      style={[styles.segmentBtn, newChartConfig.dateFilter === opt && styles.segmentActive, { paddingVertical: 4, paddingHorizontal: 8 }]}
-                                    >
-                                      <Text style={styles.segmentLabel}>{opt}</Text>
-                                    </TouchableOpacity>
-                                  ))}
-                                </View>
-                                <View style={{ flexDirection: 'row', gap: 4 }}>
-                                  {Platform.OS === 'web' ? (
-                                    <>
-                                      <input type="date" value={dashboardDateRange.from} onChange={e => setDashboardDateRange({ ...dashboardDateRange, from: e.target.value })} style={{ ...styles.webInput, flex: 1 }} />
-                                      <input type="date" value={dashboardDateRange.to} onChange={e => setDashboardDateRange({ ...dashboardDateRange, to: e.target.value })} style={{ ...styles.webInput, flex: 1 }} />
-                                    </>
-                                  ) : (
-                                    <>
-                                      <TextInput value={dashboardDateRange.from} onChangeText={t => setDashboardDateRange({ ...dashboardDateRange, from: t })} style={{ ...styles.input, flex: 1 }} placeholder="From" />
-                                      <TextInput value={dashboardDateRange.to} onChangeText={t => setDashboardDateRange({ ...dashboardDateRange, to: t })} style={{ ...styles.input, flex: 1 }} placeholder="To" />
-                                    </>
-                                  )}
-                                </View>
-                              </View>
-                            )}
-                          </View>
-                        ))}
-                      </View>
-                    </View>
-
-                    {/* Visual Representation Selection */}
-                    <View>
-                      <Text style={[styles.muted, { fontSize: 16, fontWeight: '700', marginBottom: 12 }]}>Visual Representation</Text>
-                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                        {[
-                          { key: 'pie', label: 'Pie Chart' },
-                          { key: 'bar', label: 'Bar Graph' },
-                          { key: 'line', label: 'Graph' },
-                          { key: 'histogram', label: 'Histogram' },
-                          { key: 'donut', label: 'Donut' },
-                          { key: 'lines', label: 'Lines' },
-                          { key: 'overallNumbers', label: 'Overall Numbers' },
-                        ].map(item => (
-                          <TouchableOpacity
-                            key={item.key}
-                            onPress={() => {
-                              setNewChartConfig({ ...newChartConfig, chartType: newChartConfig.chartType === item.key ? null : item.key });
-                            }}
-                            style={[
-                              { flexDirection: 'row', alignItems: 'center', gap: 6, padding: 8, backgroundColor: '#fff', borderRadius: 8, minWidth: 120, borderWidth: 2, borderColor: 'transparent' },
-                              newChartConfig.chartType === item.key && { borderColor: '#14b8a6', backgroundColor: '#f0fdfa' }
-                            ]}
-                          >
-                            <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: newChartConfig.chartType === item.key ? '#14b8a6' : '#d1d5db', alignItems: 'center', justifyContent: 'center' }}>
-                              {newChartConfig.chartType === item.key && <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#14b8a6' }} />}
-                            </View>
-                            <Text style={[textStyle, { fontSize: 12 }]}>{item.label}</Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    </View>
-
-                    {/* Chart Title */}
-                    <View>
-                      <Text style={styles.muted}>Chart Title</Text>
-                      {Platform.OS === 'web' ? (
-                        <input
-                          value={newChartConfig.title}
-                          onChange={e => setNewChartConfig({ ...newChartConfig, title: e.target.value })}
-                          style={styles.webInput}
-                          placeholder="Enter chart title"
-                        />
-                      ) : (
-                        <TextInput
-                          value={newChartConfig.title}
-                          onChangeText={t => setNewChartConfig({ ...newChartConfig, title: t })}
-                          style={styles.input}
-                          placeholder="Enter chart title"
-                        />
-                      )}
-                    </View>
-
-                    {/* Add Chart Button */}
-                    <TouchableOpacity
-                      onPress={() => {
-                        if (newChartConfig.dataSources.length > 0 && newChartConfig.chartType) {
-                          const newId = Math.max(...dashboardCharts.map(c => c.id), 0) + 1;
-                          setDashboardCharts([...dashboardCharts, {
-                            id: newId,
-                            title: newChartConfig.title,
-                            dataSources: [...newChartConfig.dataSources],
-                            chartType: newChartConfig.chartType,
-                            dateFilter: newChartConfig.dateFilter,
-                            userFilter: newChartConfig.userFilter,
-                            enabled: true
-                          }]);
-                          // Reset form
-                          setNewChartConfig({
-                            dataSources: [],
-                            chartType: null,
-                            title: 'New Chart',
-                            dateFilter: 'all',
-                            userFilter: null,
-                          });
-                        } else {
-                          Alert.alert('Error', 'Please select at least one data source and one visual representation type.');
-                        }
-                      }}
-                      style={styles.primaryBtn}
-                    >
-                      <Text style={styles.primaryBtnText}>Add Chart</Text>
-                    </TouchableOpacity>
-
-                    {/* Existing Charts */}
-                    {dashboardCharts.length > 0 && (
-                      <View>
-                        <Text style={[styles.muted, { fontSize: 16, fontWeight: '700', marginBottom: 12 }]}>Existing Charts</Text>
-                        <View style={{ gap: 8 }}>
-                          {dashboardCharts.map((chart, idx) => (
-                            <View key={chart.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 8, backgroundColor: '#fff', borderRadius: 8 }}>
-                              <Switch
-                                value={chart.enabled}
-                                onValueChange={(val) => {
-                                  const updated = [...dashboardCharts];
-                                  updated[idx].enabled = val;
-                                  setDashboardCharts(updated);
-                                }}
-                              />
-                              <Text style={[textStyle, { flex: 1 }]}>{chart.title}</Text>
-                              <TouchableOpacity
-                                onPress={() => {
-                                  const updated = dashboardCharts.filter(c => c.id !== chart.id);
-                                  setDashboardCharts(updated);
-                                }}
-                                style={{ padding: 4 }}
-                              >
-                                <Ionicons name="trash-outline" size={18} color="#ef4444" />
-                              </TouchableOpacity>
-                            </View>
-                          ))}
-                        </View>
-                      </View>
-                    )}
-                  </View>
-                </View>
-              )}
-
-              {/* Basic Metrics - Always Visible */}
               <View style={styles.metricsRow}>
-                <View style={styles.metricChip}>
-                  <Text style={styles.metricNum}>{metrics.activeStudents}</Text>
-                  <Text style={styles.metricLabel}>Online Users</Text>
+                <View style={styles.metricChip}><Text style={styles.metricNum}>{attendancePercent}%</Text><Text style={styles.metricLabel}>Overall Attendance</Text></View>
+                <View style={styles.metricChip}><Text style={styles.metricNum}>{users?.length||0}</Text><Text style={styles.metricLabel}>Total Students</Text></View>
+                <View style={styles.metricChip}><Text style={styles.metricNum}>{metrics.activeStudents}</Text><Text style={styles.metricLabel}>Online Now</Text></View>
+                <View style={styles.metricChip}><Text style={styles.metricNum}>{metrics.biometric}</Text><Text style={styles.metricLabel}>Biometric Pings</Text></View>
+              </View>
+              <View style={{ gap: 16 }}>
+                {/* First Row: KPI Cards and Donut Chart */}
+                <View style={{ flexDirection:'row', gap:12, flexWrap:'wrap' }}>
+                  {/* Overall Attendance KPI */}
+                  <View style={[styles.chartCard, { flex:1, minWidth:200 }]}>
+                    <Text style={styles.chartTitle}>Overall Attendance</Text>
+                    <View style={[styles.gaugeCircle, { borderColor: attendancePercent>=75?'#10b981':(attendancePercent>=50?'#f59e0b':'#ef4444') }]}>
+                      <Text style={styles.gaugeText}>{attendancePercent}%</Text>
+                    </View>
+                    <Text style={styles.muted}>{(sessions?.loggedIn?.length||0)} / {(users||[]).length} users</Text>
+                  </View>
+
+                  {/* Attendance by Region - Donut Chart */}
+                  <View style={[styles.chartCard, { flex:1, minWidth:250 }]}>
+                    <Text style={styles.chartTitle}>Attendance by Department</Text>
+                    {renderDonutChart(groupOnlineBy.department, 'department')}
+                  </View>
+
+                  {/* Attendance by Year - Pie Chart */}
+                  <View style={[styles.chartCard, { flex:1, minWidth:250 }]}>
+                    <Text style={styles.chartTitle}>Attendance by Year</Text>
+                    {renderPieChart(groupOnlineBy.year)}
+                  </View>
                 </View>
-                <View style={styles.metricChip}>
-                  <Text style={styles.metricNum}>{(users?.length||0) - (metrics.activeStudents||0)}</Text>
-                  <Text style={styles.metricLabel}>Offline Users</Text>
+
+                {/* Second Row: Clustered and Stacked Charts */}
+                <View style={{ flexDirection:'row', gap:12, flexWrap:'wrap' }}>
+                  {/* Online by Class - Clustered Bar Chart */}
+                  <View style={[styles.chartCard, { flex:2, minWidth:400 }]}>
+                    <Text style={styles.chartTitle}>Online Count by Class, Status</Text>
+                    {renderClusteredBarChart(groupOnlineBy.class, users)}
+                  </View>
+
+                  {/* Attendance by Month - Stacked Column Chart */}
+                  <View style={[styles.chartCard, { flex:2, minWidth:400 }]}>
+                    <Text style={styles.chartTitle}>Attendance by Month, Status</Text>
+                    {renderStackedBarChart(attRows)}
+                  </View>
                 </View>
-                <View style={styles.metricChip}>
-                  <Text style={styles.metricNum}>{attendancePercent}%</Text>
-                  <Text style={styles.metricLabel}>Overall Attendance</Text>
+
+                {/* Third Row: Line Chart and Histogram */}
+                <View style={{ flexDirection:'row', gap:12, flexWrap:'wrap' }}>
+                  {/* Attendance Trend - Line Chart */}
+                  <View style={[styles.chartCard, { flex:2, minWidth:400 }]}>
+                    <Text style={styles.chartTitle}>Attendance Trend Over Time</Text>
+                    {renderLineChart(attRows)}
+                  </View>
+
+                  {/* Attendance Distribution - Histogram */}
+                  <View style={[styles.chartCard, { flex:1, minWidth:300 }]}>
+                    <Text style={styles.chartTitle}>Attendance Distribution</Text>
+                    {renderHistogram(attRows)}
+                  </View>
+                </View>
+
+                {/* Fourth Row: Horizontal Bar Charts */}
+                <View style={{ flexDirection:'row', gap:12, flexWrap:'wrap' }}>
+                  {/* Attendance by Class - Horizontal Bar */}
+                  <View style={[styles.chartCard, { flex:2, minWidth:400 }]}>
+                    <Text style={styles.chartTitle}>Attendance by Class</Text>
+                    {renderHorizontalBarChart(groupOnlineBy.class)}
+                  </View>
+
+                  {/* Attendance by Department - Horizontal Bar */}
+                  <View style={[styles.chartCard, { flex:1, minWidth:300 }]}>
+                    <Text style={styles.chartTitle}>Attendance by Department</Text>
+                    {renderHorizontalBarChart(groupOnlineBy.department)}
+                  </View>
                 </View>
               </View>
-
-              {/* Dynamic Charts Grid - Only show if charts are configured */}
-              {dashboardCharts.filter(c => c.enabled).length > 0 && (
-                <View style={{ gap: 16, marginTop: 16 }}>
-                  {dashboardCharts.filter(c => c.enabled).map((chart, idx) => {
-                    const getChartData = () => {
-                      // Handle multiple data sources
-                      const data = {};
-                      
-                      chart.dataSources.forEach(ds => {
-                        switch(ds) {
-                          case 'name':
-                            // Group by student name
-                            const byName = {};
-                            (users || []).forEach(u => {
-                              const name = u.name || 'Unknown';
-                              byName[name] = (byName[name] || 0) + (u.loggedIn ? 1 : 0);
-                            });
-                            Object.assign(data, byName);
-                            break;
-                          case 'class':
-                            Object.assign(data, groupOnlineBy.class);
-                            break;
-                          case 'department':
-                            Object.assign(data, groupOnlineBy.department);
-                            break;
-                          case 'year':
-                            Object.assign(data, groupOnlineBy.year);
-                            break;
-                          case 'activeUsers':
-                            data['Active Users'] = (sessions?.loggedIn?.length || 0);
-                            break;
-                          case 'offlineUsers':
-                            data['Offline Users'] = Math.max(0, (users||[]).length - (sessions?.loggedIn?.length||0));
-                            break;
-                          case 'userAttendance':
-                            if (chart.userFilter) {
-                              // Get attendance for specific user
-                              const user = (users || []).find(u => String(u._id) === String(chart.userFilter) || u.name?.toLowerCase().includes(chart.userFilter?.toLowerCase()) || u.regNo === chart.userFilter);
-                              if (user) {
-                                const userAttRows = (attRows || []).filter(r => String(r.studentId) === String(user._id));
-                                const present = userAttRows.filter(r => r.status === 'present' || r.present > 0).length;
-                                const absent = userAttRows.filter(r => r.status === 'absent' || r.absent > 0).length;
-                                data['Present'] = present;
-                                data['Absent'] = absent;
-                              }
-                            }
-                            break;
-                          case 'dateAttendance':
-                            // Filter attendance rows by date filter
-                            let filteredRows = [...(attRows || [])];
-                            if (chart.dateFilter === 'day') {
-                              // Group by day
-                              const byDay = {};
-                              filteredRows.forEach(r => {
-                                const day = r.date || r.bucket;
-                                if (!byDay[day]) byDay[day] = { present: 0, absent: 0 };
-                                if (r.status === 'present') byDay[day].present += 1;
-                                else if (r.status === 'absent') byDay[day].absent += 1;
-                                else {
-                                  byDay[day].present += (r.present || 0);
-                                  byDay[day].absent += (r.absent || 0);
-                                }
-                              });
-                              Object.keys(byDay).forEach(day => {
-                                data[day] = byDay[day].present;
-                              });
-                            } else if (chart.dateFilter === 'month') {
-                              const byMonth = {};
-                              filteredRows.forEach(r => {
-                                const date = r.date || r.bucket;
-                                if (!date) return;
-                                const month = date.substring(0, 7);
-                                if (!byMonth[month]) byMonth[month] = 0;
-                                if (r.status === 'present') byMonth[month] += 1;
-                                else byMonth[month] += (r.present || 0);
-                              });
-                              Object.assign(data, byMonth);
-                            } else if (chart.dateFilter === 'year') {
-                              const byYear = {};
-                              filteredRows.forEach(r => {
-                                const date = r.date || r.bucket;
-                                if (!date) return;
-                                const year = date.substring(0, 4);
-                                if (!byYear[year]) byYear[year] = 0;
-                                if (r.status === 'present') byYear[year] += 1;
-                                else byYear[year] += (r.present || 0);
-                              });
-                              Object.assign(data, byYear);
-                            } else {
-                              // All dates - just count present
-                              const present = filteredRows.filter(r => r.status === 'present' || r.present > 0).length;
-                              const absent = filteredRows.filter(r => r.status === 'absent' || r.absent > 0).length;
-                              data['Present'] = present;
-                              data['Absent'] = absent;
-                            }
-                            break;
-                        }
-                      });
-                      
-                      return Object.keys(data).length > 0 ? data : { 'No Data': 0 };
-                    };
-
-                    const renderChart = () => {
-                      const data = getChartData();
-                      if (Object.keys(data).length === 0 || (Object.keys(data).length === 1 && data['No Data'] === 0)) {
-                        return <Text style={styles.muted}>No data available</Text>;
-                      }
-
-                      switch(chart.chartType) {
-                        case 'pie': return renderPieChart(data);
-                        case 'bar': return renderHorizontalBarChart(data);
-                        case 'line': case 'lines': return renderLineChart(attRows);
-                        case 'histogram': return renderHistogram(attRows);
-                        case 'donut': return renderDonutChart(data, 'mixed');
-                        case 'overallNumbers':
-                          const total = Object.values(data).reduce((sum, val) => sum + (typeof val === 'number' ? val : 0), 0);
-                          return (
-                            <View style={{ alignItems: 'center', padding: 20 }}>
-                              {Object.entries(data).map(([key, val]) => (
-                                <View key={key} style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 8 }}>
-                                  <Text style={[textStyle, { fontSize: 16 }]}>{key}:</Text>
-                                  <Text style={[textStyle, { fontSize: 16, fontWeight: '800' }]}>{val}</Text>
-                                </View>
-                              ))}
-                              <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#e5e7eb', width: '100%' }}>
-                                <Text style={[textStyle, { fontSize: 18, fontWeight: '800', textAlign: 'center' }]}>Total: {total}</Text>
-                              </View>
-                            </View>
-                          );
-                        default: return renderHorizontalBarChart(data);
-                      }
-                    };
-
-                    return (
-                      <View key={chart.id} style={[styles.chartCard, { minWidth: 300 }]}>
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                          <Text style={styles.chartTitle}>{chart.title}</Text>
-                          <TouchableOpacity onPress={() => {
-                            const updated = dashboardCharts.filter(c => c.id !== chart.id);
-                            setDashboardCharts(updated);
-                          }}>
-                            <Ionicons name="close-outline" size={18} color="#64748b" />
-                          </TouchableOpacity>
-                        </View>
-                        {renderChart()}
-                      </View>
-                    );
-                  })}
-                </View>
-              )}
             </Panel>
 
             {/* Right: Notifications */}
             <Panel style={styles.rightCol}>
               <Text style={styles.panelTitle}>Notification Panel</Text>
               <View style={{ gap: 10 }}>
-                {notifications.slice(0,6).map((n,i)=> {
-                  const getNotificationIcon = (type) => {
-                    switch(type) {
-                      case 'online': return 'checkmark-circle';
-                      case 'offline': return 'close-circle';
-                      case 'locationOff': return 'location-outline';
-                      case 'helpRequest': return 'help-circle';
-                      case 'noPing': return 'warning';
-                      default: return 'information-circle';
-                    }
-                  };
-                  const getNotificationColor = (type) => {
-                    switch(type) {
-                      case 'online': return '#10b981';
-                      case 'offline': return '#ef4444';
-                      case 'locationOff': return '#f59e0b';
-                      case 'helpRequest': return '#3b82f6';
-                      case 'noPing': return '#ef4444';
-                      default: return '#64748b';
-                    }
-                  };
-                  const formatNotificationType = (type) => {
-                    if (!type) return 'Notification';
-                    switch(type) {
-                      case 'noPing': return 'No Ping';
-                      case 'locationOff': return 'Location Off';
-                      case 'helpRequest': return 'Help Request';
-                      case 'online': return 'Online';
-                      case 'offline': return 'Offline';
-                      default: return type.charAt(0).toUpperCase() + type.slice(1);
-                    }
-                  };
-                  return (
-                    <View key={i} style={styles.noticeItem}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                        <Ionicons name={getNotificationIcon(n.type)} size={16} color={getNotificationColor(n.type)} />
-                        <Text style={[styles.noticeTime, { color: getNotificationColor(n.type), fontWeight: '600' }]}>
-                          {formatNotificationType(n.type)}
-                        </Text>
-                        <Text style={styles.noticeTime}>{new Date(n.at||Date.now()).toLocaleTimeString()}</Text>
-                      </View>
-                      <Text style={styles.noticeMsg}>{n.message}</Text>
-                    </View>
-                  );
-                })}
+                {notifications.slice(0,6).map((n,i)=> (
+                  <View key={i} style={styles.noticeItem}>
+                    <Text style={styles.noticeTime}>{new Date(n.at||Date.now()).toLocaleTimeString()}</Text>
+                    <Text style={styles.noticeMsg}>{n.message}</Text>
+                  </View>
+                ))}
                 {notifications.length===0 && <Text style={styles.muted}>No notifications</Text>}
               </View>
             </Panel>
@@ -1375,7 +946,7 @@ export default function AdminDashboard() {
                   // Get latest ping location for this user
                   const userPings = (pings||[]).filter(p => String(p.studentId) === String(u._id));
                   const latestPing = userPings.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
-                  
+                 
                   let locationText = '—';
                   let lat = null;
                   let lon = null;
@@ -1387,22 +958,22 @@ export default function AdminDashboard() {
                     lat = u.location.latitude;
                     lon = u.location.longitude;
                   }
-                  
+                 
                   if (lat && lon) {
-                    locationText = u.loggedIn 
+                    locationText = u.loggedIn
                       ? `Current: ${lat.toFixed(4)}, ${lon.toFixed(4)}`
                       : `Last: ${lat.toFixed(4)}, ${lon.toFixed(4)}`;
                   }
-                  
+                 
                   const openGoogleMaps = () => {
                     if (lat && lon) {
-                      const url = Platform.OS === 'ios' 
+                      const url = Platform.OS === 'ios'
                         ? `maps://maps.apple.com/?q=${lat},${lon}`
                         : `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
                       Linking.openURL(url).catch(err => console.error('Failed to open maps:', err));
                     }
                   };
-                  
+                 
                   return (
                     <View key={u._id||i} style={styles.tableRow}>
                       <Text style={[styles.td,{flex:2}]}>{u.name}</Text>
@@ -1682,40 +1253,16 @@ export default function AdminDashboard() {
                 </View>
                 <Text style={styles.muted}>Department</Text>
                 {Platform.OS==='web' ? (
-                  <input 
-                    value={settings.department||''} 
-                    onChange={e=>setSettings({ ...settings, department: e.target.value })} 
-                    onBlur={e=>setSettings({ ...settings, department: e.target.value })}
-                    style={styles.webInput} 
-                    placeholder="Department" 
-                  />
+                  <input value={settings.department||''} onChange={e=>setSettings({ ...settings, department: e.target.value })} style={styles.webInput} placeholder="Department" />
                 ) : (
-                  <TextInput 
-                    value={settings.department||''} 
-                    onChangeText={t=>setSettings({...settings, department:t})} 
-                    style={styles.input} 
-                    placeholder="Department"
-                    blurOnSubmit={false}
-                  />
+                  <TextInput value={settings.department||''} onChangeText={t=>setSettings({...settings, department:t})} style={styles.input} placeholder="Department" />
                 )}
 
                 <Text style={styles.muted}>Class</Text>
                 {Platform.OS==='web' ? (
-                  <input 
-                    value={settings.class||''} 
-                    onChange={e=>setSettings({ ...settings, class: e.target.value })} 
-                    onBlur={e=>setSettings({ ...settings, class: e.target.value })}
-                    style={styles.webInput} 
-                    placeholder="e.g., CSE-A" 
-                  />
+                  <input value={settings.class||''} onChange={e=>setSettings({ ...settings, class: e.target.value })} style={styles.webInput} placeholder="e.g., CSE-A" />
                 ) : (
-                  <TextInput 
-                    value={settings.class||''} 
-                    onChangeText={t=>setSettings({...settings, class:t})} 
-                    style={styles.input} 
-                    placeholder="e.g., CSE-A"
-                    blurOnSubmit={false}
-                  />
+                  <TextInput value={settings.class||''} onChangeText={t=>setSettings({...settings, class:t})} style={styles.input} placeholder="e.g., CSE-A" />
                 )}
 
                 <Text style={styles.muted}>Year</Text>
@@ -1766,20 +1313,9 @@ export default function AdminDashboard() {
 
                   <Text style={styles.muted}>Single Live Anchor (optional)</Text>
                   {Platform.OS==='web' ? (
-                    <input 
-                      value={`${settings.proximityLocation?.latitude||''},${settings.proximityLocation?.longitude||''}`} 
-                      onChange={e=>{ const [lat,lon]=e.target.value.split(','); setSettings({ ...settings, proximityLocation: { latitude: Number(lat), longitude: Number(lon) } }); }} 
-                      onBlur={e=>{ const [lat,lon]=e.target.value.split(','); setSettings({ ...settings, proximityLocation: { latitude: Number(lat), longitude: Number(lon) } }); }}
-                      style={styles.webInput} 
-                    />
+                    <input value={`${settings.proximityLocation?.latitude||''},${settings.proximityLocation?.longitude||''}`} onChange={e=>{ const [lat,lon]=e.target.value.split(','); setSettings({ ...settings, proximityLocation: { latitude: Number(lat), longitude: Number(lon) } }); }} style={styles.webInput} />
                   ) : (
-                    <TextInput 
-                      value={`${settings.proximityLocation?.latitude||''},${settings.proximityLocation?.longitude||''}`} 
-                      onChangeText={t=>{ const [lat,lon]=t.split(','); setSettings({ ...settings, proximityLocation: { latitude: Number(lat), longitude: Number(lon) } }); }} 
-                      style={styles.input} 
-                      placeholder="lat,lon"
-                      blurOnSubmit={false}
-                    />
+                    <TextInput value={`${settings.proximityLocation?.latitude||''},${settings.proximityLocation?.longitude||''}`} onChangeText={t=>{ const [lat,lon]=t.split(','); setSettings({ ...settings, proximityLocation: { latitude: Number(lat), longitude: Number(lon) } }); }} style={styles.input} placeholder="lat,lon" />
                   )}
                   <TouchableOpacity onPress={async()=>{
                     try {
@@ -1804,263 +1340,91 @@ export default function AdminDashboard() {
                   <Text style={styles.hint}>Students within {String(settings.proximityRadiusMeters||100)}m of any live or single anchor will count present.</Text>
                 </View>
 
-                {/* Period-Based Ping Configuration */}
-                <Text style={[styles.muted, { fontSize: 16, fontWeight: '700', marginTop: 16 }]}>Period-Based Ping Configuration</Text>
-                
-                <View style={{ gap: 12, marginTop: 8 }}>
-                  <View>
-                    <Text style={styles.muted}>College Timing</Text>
-                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.muted, { fontSize: 12 }]}>From</Text>
-                        {Platform.OS==='web' ? (
-                          <input 
-                            type="time" 
-                            value={settings.collegeTiming?.from||'09:00'} 
-                            onChange={e=>{
-                              const newTiming = { ...settings.collegeTiming, from: e.target.value };
-                              const numPeriods = settings.numberOfPeriods || 8;
-                              const pingCount = settings.defaultPingCount || 4;
-                              const updatedPeriods = Array.from({length: numPeriods}, (_, i) => ({
-                                periodNumber: i + 1,
-                                pingCount: pingCount,
-                                pings: generatePingTimes(i + 1, pingCount, newTiming, numPeriods)
-                              }));
-                              setSettings({ ...settings, collegeTiming: newTiming, periodConfig: updatedPeriods });
-                            }} 
-                            style={styles.webInput} 
-                          />
-                        ) : (
-                          <TextInput 
-                            value={settings.collegeTiming?.from||'09:00'} 
-                            onChangeText={t=>{
-                              const newTiming = { ...settings.collegeTiming, from: t };
-                              const numPeriods = settings.numberOfPeriods || 8;
-                              const pingCount = settings.defaultPingCount || 4;
-                              const updatedPeriods = Array.from({length: numPeriods}, (_, i) => ({
-                                periodNumber: i + 1,
-                                pingCount: pingCount,
-                                pings: generatePingTimes(i + 1, pingCount, newTiming, numPeriods)
-                              }));
-                              setSettings({...settings, collegeTiming: newTiming, periodConfig: updatedPeriods});
-                            }} 
-                            style={styles.input} 
-                            placeholder="09:00"
-                            blurOnSubmit={false}
-                          />
-                        )}
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.muted, { fontSize: 12 }]}>To</Text>
-                        {Platform.OS==='web' ? (
-                          <input 
-                            type="time" 
-                            value={settings.collegeTiming?.to||'17:00'} 
-                            onChange={e=>{
-                              const newTiming = { ...settings.collegeTiming, to: e.target.value };
-                              const numPeriods = settings.numberOfPeriods || 8;
-                              const pingCount = settings.defaultPingCount || 4;
-                              const updatedPeriods = Array.from({length: numPeriods}, (_, i) => ({
-                                periodNumber: i + 1,
-                                pingCount: pingCount,
-                                pings: generatePingTimes(i + 1, pingCount, newTiming, numPeriods)
-                              }));
-                              setSettings({ ...settings, collegeTiming: newTiming, periodConfig: updatedPeriods });
-                            }} 
-                            style={styles.webInput} 
-                          />
-                        ) : (
-                          <TextInput 
-                            value={settings.collegeTiming?.to||'17:00'} 
-                            onChangeText={t=>{
-                              const newTiming = { ...settings.collegeTiming, to: t };
-                              const numPeriods = settings.numberOfPeriods || 8;
-                              const pingCount = settings.defaultPingCount || 4;
-                              const updatedPeriods = Array.from({length: numPeriods}, (_, i) => ({
-                                periodNumber: i + 1,
-                                pingCount: pingCount,
-                                pings: generatePingTimes(i + 1, pingCount, newTiming, numPeriods)
-                              }));
-                              setSettings({...settings, collegeTiming: newTiming, periodConfig: updatedPeriods});
-                            }} 
-                            style={styles.input} 
-                            placeholder="17:00"
-                            blurOnSubmit={false}
-                          />
-                        )}
-                      </View>
-                    </View>
-                  </View>
-
-                  <View>
-                    <Text style={styles.muted}>Number of Periods</Text>
-                    {Platform.OS==='web' ? (
-                      <input type="number" min="1" max="8" value={String(settings.numberOfPeriods||8)} onChange={e=>{
-                        const numPeriods = Math.max(1, Math.min(8, Number(e.target.value||8)));
-                        const pingCount = settings.defaultPingCount || 4;
-                        const collegeTiming = settings.collegeTiming || { from: '09:00', to: '17:00' };
-                        const periods = Array.from({length: numPeriods}, (_, i) => ({
-                          periodNumber: i + 1,
-                          pings: generatePingTimes(i + 1, pingCount, collegeTiming, numPeriods),
-                          pingCount: pingCount
-                        }));
-                        setSettings({ ...settings, numberOfPeriods: numPeriods, periodConfig: periods });
-                      }} style={styles.webInput} />
-                    ) : (
-                      <TextInput 
-                        value={String(settings.numberOfPeriods||8)} 
-                        onChangeText={t=>{
-                          const numPeriods = Math.max(1, Math.min(8, Number(t||8)));
-                          const pingCount = settings.defaultPingCount || 4;
-                          const collegeTiming = settings.collegeTiming || { from: '09:00', to: '17:00' };
-                          const periods = Array.from({length: numPeriods}, (_, i) => ({
-                            periodNumber: i + 1,
-                            pings: generatePingTimes(i + 1, pingCount, collegeTiming, numPeriods),
-                            pingCount: pingCount
-                          }));
-                          setSettings({ ...settings, numberOfPeriods: numPeriods, periodConfig: periods });
-                        }} 
-                        style={styles.input} 
-                        placeholder="8"
-                        keyboardType="numeric"
-                        blurOnSubmit={false}
-                      />
-                    )}
-                  </View>
-
-                  <View>
-                    <Text style={styles.muted}>Number of Pings (per period)</Text>
-                    {Platform.OS==='web' ? (
-                      <input type="number" min="1" max="4" value={String(settings.defaultPingCount||4)} onChange={e=>{
-                        const pingCount = Math.max(1, Math.min(4, Number(e.target.value||4)));
-                        const numPeriods = settings.numberOfPeriods || 8;
-                        const collegeTiming = settings.collegeTiming || { from: '09:00', to: '17:00' };
-                        const updatedPeriods = Array.from({length: numPeriods}, (_, i) => ({
-                          periodNumber: i + 1,
-                          pingCount: pingCount,
-                          pings: generatePingTimes(i + 1, pingCount, collegeTiming, numPeriods)
-                        }));
-                        setSettings({ ...settings, defaultPingCount: pingCount, periodConfig: updatedPeriods });
-                      }} style={styles.webInput} />
-                    ) : (
-                      <TextInput 
-                        value={String(settings.defaultPingCount||4)} 
-                        onChangeText={t=>{
-                          const pingCount = Math.max(1, Math.min(4, Number(t||4)));
-                          const numPeriods = settings.numberOfPeriods || 8;
-                          const collegeTiming = settings.collegeTiming || { from: '09:00', to: '17:00' };
-                          const updatedPeriods = Array.from({length: numPeriods}, (_, i) => ({
-                            periodNumber: i + 1,
-                            pingCount: pingCount,
-                            pings: generatePingTimes(i + 1, pingCount, collegeTiming, numPeriods)
-                          }));
-                          setSettings({ ...settings, defaultPingCount: pingCount, periodConfig: updatedPeriods });
-                        }} 
-                        style={styles.input} 
-                        placeholder="4"
-                        keyboardType="numeric"
-                        blurOnSubmit={false}
-                      />
-                    )}
-                  </View>
-
-                  {/* Period Configuration */}
-                  {(settings.periodConfig||[]).map((period, idx) => {
-                    const pingOptions = getPingOptions(period.pingCount);
-                    return (
-                      <View key={idx} style={{ padding: 12, backgroundColor: '#f8fafc', borderRadius: 8, gap: 8 }}>
-                        <Text style={[styles.muted, { fontWeight: '700' }]}>{period.periodNumber}{period.periodNumber === 1 ? 'st' : period.periodNumber === 2 ? 'nd' : period.periodNumber === 3 ? 'rd' : 'th'} Period:</Text>
-                        {pingOptions.map((opt, optIdx) => (
-                          <View key={optIdx} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                            <Text style={[styles.muted, { minWidth: 100 }]}>{opt.label}:</Text>
-                            {Platform.OS==='web' ? (
-                              <input 
-                                type="time" 
-                                value={period.pings?.[optIdx]?.time||''} 
-                                onChange={e=>{
-                                  const updated = [...(settings.periodConfig||[])];
-                                  if (!updated[idx].pings) updated[idx].pings = [];
-                                  updated[idx].pings[optIdx] = { type: opt.key, time: e.target.value };
-                                  setSettings({ ...settings, periodConfig: updated });
-                                }}
-                                style={styles.webInput}
-                              />
-                            ) : (
-                              <TextInput 
-                                value={period.pings?.[optIdx]?.time||''} 
-                                onChangeText={t=>{
-                                  const updated = [...(settings.periodConfig||[])];
-                                  if (!updated[idx].pings) updated[idx].pings = [];
-                                  updated[idx].pings[optIdx] = { type: opt.key, time: t };
-                                  setSettings({ ...settings, periodConfig: updated });
-                                }}
-                                style={styles.input}
-                                placeholder="HH:MM"
-                                blurOnSubmit={false}
-                              />
-                            )}
-                          </View>
-                        ))}
-                      </View>
-                    );
-                  })}
-
-                  {/* Biometric Configuration */}
-                  <View>
-                    <Text style={styles.muted}>Biometric</Text>
-                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
-                      <TouchableOpacity 
-                        onPress={()=>setSettings({ ...settings, biometricEnabled: false })} 
-                        style={[styles.segmentBtn, !settings.biometricEnabled && styles.segmentActive]}
-                      >
-                        <Text style={styles.segmentLabel}>Off</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity 
-                        onPress={()=>setSettings({ ...settings, biometricEnabled: true })} 
-                        style={[styles.segmentBtn, settings.biometricEnabled && styles.segmentActive]}
-                      >
-                        <Text style={styles.segmentLabel}>On</Text>
-                      </TouchableOpacity>
-                    </View>
-                    {settings.biometricEnabled && (
-                      <View style={{ marginTop: 8, gap: 8 }}>
-                        <View>
-                          <Text style={[styles.muted, { fontSize: 12 }]}>Periods (comma separated)</Text>
-                          {Platform.OS==='web' ? (
-                            <input 
-                              value={(settings.biometricPeriods||[]).join(',')} 
-                              onChange={e=>setSettings({ ...settings, biometricPeriods: e.target.value.split(',').map(s=>Number(s.trim())).filter(n=>!isNaN(n)) })} 
-                              style={styles.webInput} 
-                            />
-                          ) : (
-                            <TextInput 
-                              value={(settings.biometricPeriods||[]).join(',')} 
-                              onChangeText={t=>setSettings({ ...settings, biometricPeriods: t.split(',').map(s=>Number(s.trim())).filter(n=>!isNaN(n)) })} 
-                              style={styles.input} 
-                              placeholder="1,3,5"
-                              blurOnSubmit={false}
-                            />
-                          )}
-                        </View>
-                        <View>
-                          <Text style={[styles.muted, { fontSize: 12 }]}>Biometric Trigger</Text>
-                          <View style={styles.segmentRow}>
-                            {getBiometricOptions(settings.defaultPingCount||4).map(opt => (
-                              <TouchableOpacity
-                                key={opt}
-                                onPress={()=>setSettings({ ...settings, biometricTrigger: opt })}
-                                style={[styles.segmentBtn, settings.biometricTrigger === opt && styles.segmentActive]}
-                              >
-                                <Text style={styles.segmentLabel}>{opt}</Text>
-                              </TouchableOpacity>
-                            ))}
-                          </View>
-                        </View>
-                      </View>
-                    )}
-                  </View>
+                <Text style={styles.muted}>Pings required for Present (per period)</Text>
+                <View style={styles.segmentRow}>
+                  {[2,3,4].map(n => (
+                    <TouchableOpacity key={n} onPress={()=>setSettings({ ...settings, pingThresholdPerPeriod: n })} style={[styles.segmentBtn, (settings.pingThresholdPerPeriod||4)===n && styles.segmentActive]}>
+                      <Text style={styles.segmentLabel}>{n}</Text>
+                    </TouchableOpacity>
+                  ))}
                 </View>
 
+                <Text style={styles.muted}>Ping interval (value + unit)</Text>
+                <View style={styles.segmentRow}>
+                  {Platform.OS==='web' ? (
+                    <input type="number" min="1" value={String(Math.max(1, Math.round((settings.pingIntervalMs||60000)/1000)))} onChange={e=>{
+                      const seconds = Number(e.target.value||'60');
+                      setSettings({ ...settings, pingIntervalMs: seconds*1000 });
+                    }} style={styles.webInput} />
+                  ) : (
+                    <TextInput value={String(Math.max(1, Math.round((settings.pingIntervalMs||60000)/1000)))} onChangeText={t=>{
+                      const seconds = Number(t||'60');
+                      setSettings({ ...settings, pingIntervalMs: seconds*1000 });
+                    }} style={styles.input} placeholder="60" />
+                  )}
+                  {Platform.OS==='web' ? (
+                    <select value={(settings.pingIntervalMs||60000) % 3600000 === 0 ? 'hours' : (settings.pingIntervalMs||60000) % 60000 === 0 ? 'minutes' : 'seconds'} onChange={e=>{
+                      const unit = e.target.value;
+                      const baseSeconds = Math.max(1, Math.round((settings.pingIntervalMs||60000)/1000));
+                      const ms = unit==='hours' ? baseSeconds*1000*60*60/baseSeconds*baseSeconds : unit==='minutes' ? baseSeconds*1000*60 : baseSeconds*1000;
+                      setSettings({ ...settings, pingIntervalMs: ms });
+                    }} style={styles.webInput}>
+                      <option value="seconds">seconds</option>
+                      <option value="minutes">minutes</option>
+                      <option value="hours">hours</option>
+                    </select>
+                  ) : (
+                    <Text style={styles.muted}>seconds</Text>
+                  )}
+                </View>
+
+                <Text style={styles.muted}>Biometric trigger mode</Text>
+                <View style={styles.segmentRow}>
+                  {['off','pingNumber','time','period'].map(m => (
+                    <TouchableOpacity key={m} onPress={()=>setSettings({ ...settings, biometricTriggerMode: m })} style={[styles.segmentBtn, (settings.biometricTriggerMode||'pingNumber')===m && styles.segmentActive]}>
+                      <Text style={styles.segmentLabel}>{m}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {(settings.biometricTriggerMode||'pingNumber')==='pingNumber' && (
+                  <>
+                    <Text style={styles.muted}>Biometric challenge at ping number</Text>
+                    {Platform.OS==='web' ? (
+                      <input type="number" min="1" max="10" value={String(settings.biometricAtPingNumber||1)} onChange={e=>setSettings({ ...settings, biometricAtPingNumber: Number(e.target.value||'1') })} style={styles.webInput} />
+                    ) : (
+                      <TextInput value={String(settings.biometricAtPingNumber||1)} onChangeText={t=>setSettings({ ...settings, biometricAtPingNumber: Number(t||'1') })} style={styles.input} placeholder="1" />
+                    )}
+                  </>
+                )}
+
+                {(settings.biometricTriggerMode||'pingNumber')==='time' && (
+                  <>
+                    <Text style={styles.muted}>Biometric time windows (HH:mm-HH:mm; separate by ;)</Text>
+                    {Platform.OS==='web' ? (
+                      <input value={(settings.biometricTimeWindows||[]).map(w=>`${w.start||''}-${w.end||''}`).join(';')} onChange={e=>{
+                        const arr = e.target.value.split(';').map(s=>s.trim()).filter(Boolean).map(p=>{ const [a,b] = p.split('-'); return { start: (a||'').trim(), end: (b||'').trim() }; });
+                        setSettings({ ...settings, biometricTimeWindows: arr });
+                      }} style={styles.webInput} />
+                    ) : (
+                      <TextInput value={(settings.biometricTimeWindows||[]).map(w=>`${w.start||''}-${w.end||''}`).join(';')} onChangeText={t=>{
+                        const arr = t.split(';').map(s=>s.trim()).filter(Boolean).map(p=>{ const [a,b] = p.split('-'); return { start: (a||'').trim(), end: (b||'').trim() }; });
+                        setSettings({ ...settings, biometricTimeWindows: arr });
+                      }} style={styles.input} placeholder={'09:10-09:20; 11:00-11:05'} />
+                    )}
+                  </>
+                )}
+
+                {(settings.biometricTriggerMode||'pingNumber')==='period' && (
+                  <>
+                    <Text style={styles.muted}>Biometric required periods (comma separated)</Text>
+                    {Platform.OS==='web' ? (
+                      <input value={(settings.biometricPeriods||[]).join(',')} onChange={e=>setSettings({ ...settings, biometricPeriods: e.target.value.split(',').map(s=>Number(s.trim())).filter(n=>!isNaN(n)) })} style={styles.webInput} />
+                    ) : (
+                      <TextInput value={(settings.biometricPeriods||[]).join(',')} onChangeText={t=>setSettings({ ...settings, biometricPeriods: t.split(',').map(s=>Number(s.trim())).filter(n=>!isNaN(n)) })} style={styles.input} placeholder={'1,3,5'} />
+                    )}
+                  </>
+                )}
 
                 <TouchableOpacity onPress={saveSettings} style={styles.primaryBtn}><Text style={styles.primaryBtnText}>Save Settings</Text></TouchableOpacity>
               </View>
@@ -2073,144 +1437,22 @@ export default function AdminDashboard() {
             <Text style={styles.panelTitle}>Notifications</Text>
             <TableContainer>
               <View style={styles.tableHeader}>
-                <Text style={[styles.th,{flex:2}]}>Type & Time</Text>
+                <Text style={[styles.th,{flex:2}]}>Time</Text>
                 <Text style={[styles.th,{flex:2}]}>Student</Text>
                 <Text style={[styles.th,{flex:3}]}>Message</Text>
               </View>
-              {notifications.map((n,i)=> {
-                const getNotificationIcon = (type) => {
-                  switch(type) {
-                    case 'online': return 'checkmark-circle';
-                    case 'offline': return 'close-circle';
-                    case 'locationOff': return 'location-outline';
-                    case 'helpRequest': return 'help-circle';
-                    case 'noPing': return 'warning';
-                    default: return 'information-circle';
-                  }
-                };
-                const getNotificationColor = (type) => {
-                  switch(type) {
-                    case 'online': return '#10b981';
-                    case 'offline': return '#ef4444';
-                    case 'locationOff': return '#f59e0b';
-                    case 'helpRequest': return '#3b82f6';
-                    case 'noPing': return '#ef4444';
-                    default: return '#64748b';
-                  }
-                };
-                const formatNotificationType = (type) => {
-                  if (!type) return 'Notification';
-                  switch(type) {
-                    case 'noPing': return 'No Ping';
-                    case 'locationOff': return 'Location Off';
-                    case 'helpRequest': return 'Help Request';
-                    case 'online': return 'Online';
-                    case 'offline': return 'Offline';
-                    default: return type.charAt(0).toUpperCase() + type.slice(1);
-                  }
-                };
-                return (
-                  <View key={i} style={styles.tableRow}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 2 }}>
-                      <Ionicons name={getNotificationIcon(n.type)} size={18} color={getNotificationColor(n.type)} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.td, { color: getNotificationColor(n.type), fontWeight: '600', fontSize: 12 }]}>{formatNotificationType(n.type)}</Text>
-                        <Text style={[styles.td,{fontSize: 12}]}>{new Date(n.at||Date.now()).toLocaleString()}</Text>
-                      </View>
-                    </View>
-                    <Text style={[styles.td,{flex:2}]}>{n.studentName} ({n.regNo})</Text>
-                    <View style={{ flex: 3, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <Text style={[styles.td,{flex:1}]}>{n.message}</Text>
-                      {n.type === 'helpRequest' && (
-                        <TouchableOpacity 
-                          onPress={() => {
-                            setReplyStudentId(n.studentId);
-                            setReplyStudentName(n.studentName);
-                            setReplyModalVisible(true);
-                          }}
-                          style={[styles.secondaryBtn, { marginTop: 0, paddingVertical: 4, paddingHorizontal: 8 }]}
-                        >
-                          <Ionicons name="chatbubble-outline" size={14} color="#000" />
-                          <Text style={[styles.secondaryBtnText, { fontSize: 12 }]}>Reply</Text>
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  </View>
-                );
-              })}
+              {notifications.map((n,i)=>(
+                <View key={i} style={styles.tableRow}>
+                  <Text style={[styles.td,{flex:2}]}>{new Date(n.at||Date.now()).toLocaleString()}</Text>
+                  <Text style={[styles.td,{flex:2}]}>{n.studentName} ({n.regNo})</Text>
+                  <Text style={[styles.td,{flex:3}]}>{n.message}</Text>
+                </View>
+              ))}
             </TableContainer>
           </Panel>
         )}
         </Panel>
       </ScrollView>
-
-      {/* Reply Modal */}
-      <Modal
-        visible={replyModalVisible}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setReplyModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Reply to {replyStudentName}</Text>
-              <TouchableOpacity onPress={() => setReplyModalVisible(false)}>
-                <Ionicons name="close" size={24} color="#000" />
-              </TouchableOpacity>
-            </View>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Type your reply..."
-              multiline
-              numberOfLines={4}
-              value={replyMessage}
-              onChangeText={setReplyMessage}
-            />
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.secondaryBtn, { marginTop: 0 }]}
-                onPress={() => setReplyModalVisible(false)}
-              >
-                <Text style={styles.secondaryBtnText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.primaryBtn, { marginTop: 0 }]}
-                onPress={async () => {
-                  if (!replyMessage.trim()) {
-                    Alert.alert('Error', 'Please enter a message');
-                    return;
-                  }
-                  try {
-                    const response = await fetch(apiUrl('/messages/send'), {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        studentId: replyStudentId,
-                        sender: 'admin',
-                        message: replyMessage
-                      })
-                    });
-                    const data = await response.json();
-                    if (response.ok) {
-                      Alert.alert('Success', 'Reply sent successfully');
-                      setReplyMessage('');
-                      setReplyModalVisible(false);
-                    } else {
-                      Alert.alert('Error', data.error || 'Failed to send reply');
-                    }
-                  } catch (err) {
-                    console.error('Send reply error:', err);
-                    Alert.alert('Error', 'Failed to send reply');
-                  }
-                }}
-              >
-                <Text style={styles.primaryBtnText}>Send Reply</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
 
       {/* Slide-in filter sidebar (web optimized, mobile full-screen) */}
       {showFilters && (
@@ -2225,7 +1467,7 @@ export default function AdminDashboard() {
             <TouchableOpacity style={styles.foldHandle} onPress={() => setShowFilters(false)}>
               <Text style={{ color: '#fff', fontWeight: '700' }}>{'<'}</Text>
             </TouchableOpacity>
-            
+           
             <View style={styles.sidebarContent}>
               <View style={styles.filterSection}>
                 <Text style={styles.sectionTitle}>Date Range</Text>
@@ -2237,7 +1479,7 @@ export default function AdminDashboard() {
                   <Text style={styles.dateLabel}>To:</Text>
                   <input type="date" value={to} onChange={e => setTo(e.target.value)} style={styles.dateInput} />
                 </View>
-                
+               
                 <Text style={styles.sectionTitle}>Grouping</Text>
                 <select value={granularity} onChange={e => setGranularity(e.target.value)} style={styles.select}>
                   <option value="day">Daily</option>
@@ -2245,35 +1487,35 @@ export default function AdminDashboard() {
                   <option value="month">Monthly</option>
                   <option value="year">Yearly</option>
                 </select>
-                
+               
                 <Text style={styles.sectionTitle}>Search</Text>
-                <input 
-                  value={query} 
-                  onChange={e => setQuery(e.target.value)} 
-                  placeholder="Search by name, reg no, username, etc." 
+                <input
+                  value={query}
+                  onChange={e => setQuery(e.target.value)}
+                  placeholder="Search by name, reg no, username, etc."
                   style={styles.textInput}
                 />
-                
-                <TouchableOpacity 
-                  onPress={() => { 
-                    setShowFilters(false); 
-                    if (tab==='attendance') loadAttendance(); 
+               
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowFilters(false);
+                    if (tab==='attendance') loadAttendance();
                     else loadPings();
                     loadUsers();
-                  }} 
+                  }}
                   style={[styles.primaryBtn,{alignSelf:'flex-start'}]}
                 >
                   <Text style={styles.primaryBtnText}>Apply Filters</Text>
                 </TouchableOpacity>
               </View>
-              
+             
               <View style={styles.filterSection}>
                 <Text style={styles.sectionTitle}>Export Data</Text>
                 <TouchableOpacity onPress={exportUsers} style={styles.secondaryBtn}><Text style={styles.secondaryBtnText}>Export Users (CSV)</Text></TouchableOpacity>
                 <TouchableOpacity onPress={exportAttendance} style={styles.secondaryBtn}><Text style={styles.secondaryBtnText}>Export Attendance (CSV)</Text></TouchableOpacity>
                 <Text style={styles.hint}>CSV files open directly in Excel</Text>
               </View>
-              
+             
               <View style={styles.filterSection}>
                 <Text style={styles.sectionTitle}>Quick Analytics</Text>
                 {(() => {
@@ -2361,17 +1603,17 @@ export default function AdminDashboard() {
                   document.body.removeChild(a);
                   URL.revokeObjectURL(url);
                 }} style={styles.exportButton}>
-                  <Ionicons name="download-outline" size={16} color="#000" />
-                  <Text style={[styles.exportButtonText, { color: '#000' }]}>Export CSV</Text>
+                  <Ionicons name="download-outline" size={16} color="#fff" />
+                  <Text style={styles.exportButtonText}>Export CSV</Text>
                 </TouchableOpacity>
               )}
             </View>
             <TableContainer minWidth={900}>
-              <View style={[styles.tableHeader, { backgroundColor: 'rgba(0,0,0,0.05)' }]}>
-                <Text style={[styles.th,{flex:1.2, color: '#000'}]}>Date</Text>
-                {Array.from({length:8}).map((_,idx)=>(<Text key={idx} style={[styles.th,{flex:1, color: '#000'}]}>P{idx+1}</Text>))}
-                <Text style={[styles.th,{flex:1.5, color: '#000'}]}>Overall</Text>
-                <Text style={[styles.th,{flex:0.8,textAlign:'right', color: '#000'}]}></Text>
+              <View style={styles.tableHeader}>
+                <Text style={[styles.th,{flex:1.2}]}>Date</Text>
+                {Array.from({length:8}).map((_,idx)=>(<Text key={idx} style={[styles.th,{flex:1}]}>P{idx+1}</Text>))}
+                <Text style={[styles.th,{flex:1.5}]}>Overall</Text>
+                <Text style={[styles.th,{flex:0.8,textAlign:'right'}]}></Text>
               </View>
               {(() => {
                 const s = settingsCache||{};
@@ -2384,7 +1626,7 @@ export default function AdminDashboard() {
                 const pinPoly=(pt,poly)=>{ if(!poly||poly.length<3) return false; let inside=false; for(let i=0,j=poly.length-1;i<poly.length;j=i++){const xi=poly[i].latitude, yi=poly[i].longitude; const xj=poly[j].latitude, yj=poly[j].longitude; const intersect=((yi>pt.longitude)!==(yj>pt.longitude)) && (pt.latitude < (xj - xi) * (pt.longitude - yi) / (yj - yi + 1e-12) + xi); if(intersect) inside=!inside;} return inside; };
                 const liveAnchors = s.proximityAnchors||[];
                 const singleAnchor = s.proximityLocation; const singleR = s.proximityRadiusMeters||100;
-                
+               
                 // Calculate valid pings per period per date
                 const validPingsByDatePeriod = {};
                 (historyData.pings||[]).forEach(p=>{
@@ -2400,7 +1642,7 @@ export default function AdminDashboard() {
                     validPingsByDatePeriod[d][period]++;
                   }
                 });
-                
+               
                 return (historyData.records||[]).map((r,i)=>{
                   const statusByPeriod = {};
                   (r.periods||[]).forEach(p=>{ statusByPeriod[p.periodNumber]=p.status; });
@@ -2423,7 +1665,7 @@ export default function AdminDashboard() {
                 } catch {}
                 // Skip days with neither attendance nor any pings
                 if (((r.periods||[]).length===0) && !datesWithPings.has(r.date)) return null;
-                
+               
                 // Calculate period statuses: use recorded status if available, otherwise calculate from pings
                 const periodStatuses = {};
                 for(let pnum=1; pnum<=8; pnum++) {
@@ -2442,14 +1684,14 @@ export default function AdminDashboard() {
                     }
                   }
                 }
-                
+               
                 const presentSet = new Set(Object.keys(periodStatuses).filter(p=>periodStatuses[p]==='present').map(Number));
                 // Calculate overall: present if all 8 periods are present
                 const presentCount = presentSet.size;
                 const overall = presentCount === 8 ? 'present' : (presentCount > 0 ? 'partial' : 'absent');
                 return (
-                  <View key={i} style={[styles.tableRow, { alignItems:'center', backgroundColor: 'rgba(0,0,0,0.02)' }]}>
-                    <Text style={[styles.td,{flex:1.2, color: '#000'}]}>{r.date}</Text>
+                  <View key={i} style={[styles.tableRow, { alignItems:'center' }]}>
+                    <Text style={[styles.td,{flex:1.2}]}>{r.date}</Text>
                     {Array.from({length:8}).map((_,idx)=> {
                       const pnum = idx+1;
                       // Show present/absent for all periods, never show '-'
@@ -2520,8 +1762,8 @@ export default function AdminDashboard() {
                     });
                     for(let p=1; p<=8; p++) {
                       const validCount = validPingsByPeriod[p] || 0;
-                      const status = attendanceByDatePeriod[d] && attendanceByDatePeriod[d][p] 
-                        ? attendanceByDatePeriod[d][p] 
+                      const status = attendanceByDatePeriod[d] && attendanceByDatePeriod[d][p]
+                        ? attendanceByDatePeriod[d][p]
                         : (validCount >= threshold ? 'present' : (validCount > 0 ? 'absent' : '-'));
                       const locationText = (collegePoly.length>=3 ? pinPoly({latitude: byDate[d][0]?.location?.latitude, longitude: byDate[d][0]?.location?.longitude}, collegePoly) : (s.useCollegeLocation && s.collegeLocation && dist({latitude: byDate[d][0]?.location?.latitude, longitude: byDate[d][0]?.location?.longitude}, s.collegeLocation)<=campusRadius)) ? 'college' : 'live';
                       csvRows.push([d, validCount, locationText, `P${p}`, status].join(','));
@@ -2539,19 +1781,19 @@ export default function AdminDashboard() {
                   document.body.removeChild(a);
                   URL.revokeObjectURL(url);
                 }} style={styles.exportButton}>
-                  <Ionicons name="download-outline" size={16} color="#000" />
-                  <Text style={[styles.exportButtonText, { color: '#000' }]}>Export CSV</Text>
+                  <Ionicons name="download-outline" size={16} color="#fff" />
+                  <Text style={styles.exportButtonText}>Export CSV</Text>
                 </TouchableOpacity>
               )}
             </View>
             <TableContainer minWidth={800}>
-              <View style={[styles.tableHeader, { backgroundColor: 'rgba(0,0,0,0.05)' }]}>
-                <Text style={[styles.th,{flex:1.2, color: '#000'}]}>Date</Text>
-                <Text style={[styles.th,{flex:1.2, color: '#000'}]}>No. of Pings</Text>
-                <Text style={[styles.th,{flex:1.6, color: '#000'}]}>Location (college | live)</Text>
-                <Text style={[styles.th,{flex:0.8, color: '#000'}]}>Period</Text>
-                <Text style={[styles.th,{flex:1.2, color: '#000'}]}>Attendance</Text>
-                <Text style={[styles.th,{flex:0.8,textAlign:'right', color: '#000'}]}></Text>
+              <View style={styles.tableHeader}>
+                <Text style={[styles.th,{flex:1.2}]}>Date</Text>
+                <Text style={[styles.th,{flex:1.2}]}>No. of Pings</Text>
+                <Text style={[styles.th,{flex:1.6}]}>Location (college | live)</Text>
+                <Text style={[styles.th,{flex:0.8}]}>Period</Text>
+                <Text style={[styles.th,{flex:1.2}]}>Attendance</Text>
+                <Text style={[styles.th,{flex:0.8,textAlign:'right'}]}></Text>
               </View>
               {(() => {
                 const s = settingsCache||{};
@@ -2609,11 +1851,11 @@ export default function AdminDashboard() {
                     const period = p.periodNumber || 0;
                     const attendanceStatus = periodStatus[period] || '-';
                     rows.push(
-                      <View key={`${d}-${idx}`} style={[styles.tableRow, { alignItems:'center', backgroundColor: 'rgba(0,0,0,0.02)' }]}>
-                        <Text style={[styles.td,{flex:1.2, color: '#000'}]}>{d}</Text>
-                        <Text style={[styles.td,{flex:1.2, color: '#000'}]}>{idx+1}</Text>
-                        <Text style={[styles.td,{flex:1.6, color: '#000'}]}>{inCollege?'yes':'no'} | {inLive?'yes':'no'}</Text>
-                        <Text style={[styles.td,{flex:0.8, color: '#000'}]}>{period}</Text>
+                      <View key={`${d}-${idx}`} style={[styles.tableRow, { alignItems:'center' }]}>
+                        <Text style={[styles.td,{flex:1.2}]}>{d}</Text>
+                        <Text style={[styles.td,{flex:1.2}]}>{idx+1}</Text>
+                        <Text style={[styles.td,{flex:1.6}]}>{inCollege?'yes':'no'} | {inLive?'yes':'no'}</Text>
+                        <Text style={[styles.td,{flex:0.8}]}>{period}</Text>
                         <Text style={[styles.td,{flex:1.2, color: attendanceStatus==='present'?'#10b981':(attendanceStatus==='absent'?'#ef4444':'#64748b')}]}>{attendanceStatus}</Text>
                         <View style={{ flex:0.8, alignItems:'flex-end' }}>
                           <TouchableOpacity onPress={async()=>{
@@ -2649,7 +1891,6 @@ const styles = StyleSheet.create({
   bg: Platform.select({
     web: {
       backgroundImage: 'linear-gradient(135deg, #ffffffff 0%, #ffffffff 50%, #ffffffff 100%)',
-      fontFamily: 'Times New Roman, Times, serif',
     },
     default: { backgroundColor: '#ffffffff' },
   }),
@@ -2665,14 +1906,14 @@ const styles = StyleSheet.create({
     borderBottomColor: '#e2e8f0',
     ...Platform.select({ default: { elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowOffset: { width: 0, height: 2 }, shadowRadius: 4 } })
   },
-  brand: { fontSize: 20, fontWeight: '800', color: '#010101ff', fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
+  brand: { fontSize: 20, fontWeight: '800', color: '#010101ff' },
   navRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 18, flexWrap: 'wrap' },
   navRowSmall: { flexDirection:'row', flexWrap:'wrap', gap: 12 },
   navRowMobile: { flexDirection:'row', alignItems:'flex-end', gap: 16, paddingVertical: 4 },
   navTab: { alignItems: 'center', paddingHorizontal: 6 },
   navTabBig: { width: '100%', alignItems:'flex-start' },
-  navTabText: { color: '#000000ff', fontWeight: '800', fontSize: 14, fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
-  navTabTextActive: { color: '#000000ff', fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
+  navTabText: { color: '#000000ff', fontWeight: '800', fontSize: 14 },
+  navTabTextActive: { color: '#000000ff' },
   navUnderline: { height: 2, width: '100%', backgroundColor: 'transparent', marginTop: 4, borderRadius: 9999 },
   navUnderlineActive: { backgroundColor: '#000000ff' },
   logout: { flexDirection:'row', alignItems:'center', gap:6, paddingVertical:4, paddingHorizontal:6, borderRadius:6 },
@@ -2722,15 +1963,15 @@ const styles = StyleSheet.create({
 
   contentBox: { padding: 12 },
 
-  panelTitle: { fontSize: 16, fontWeight: '800', color: '#000000ff', marginBottom: 10, fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
-  muted: { color: '#000000ff', fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
-  value: { color: '#0f172a', fontWeight: '700', fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
+  panelTitle: { fontSize: 16, fontWeight: '800', color: '#000000ff', marginBottom: 10 },
+  muted: { color: '#526581ff' },
+  value: { color: '#0f172a', fontWeight: '700' },
   rowBetween: { flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginTop: 4 },
   primaryBtn: { marginTop: 12, backgroundColor: '#0a0a0aff', paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
-  primaryBtnText: { color: '#fcfdffff', fontWeight: '800', fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
+  primaryBtnText: { color: '#fcfdffff', fontWeight: '800' },
   secondaryBtn: { backgroundColor: 'rgba(96,165,250,0.15)', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 8, marginTop: 6 },
-  secondaryBtnText: { color: '#000000ff', fontWeight: '700', fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
-  link: { color: '#000000ff', fontWeight: '700', textDecorationLine: 'underline', fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
+  secondaryBtnText: { color: '#000000ff', fontWeight: '700' },
+  link: { color: '#000000ff', fontWeight: '700', textDecorationLine: 'underline' },
 
   mapWrap: { height: 200, borderRadius: 12, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.6)', position: 'relative' },
   legendRow: { flexDirection:'row', alignItems:'center', gap:8, marginTop: 8, flexWrap:'wrap' },
@@ -2739,34 +1980,34 @@ const styles = StyleSheet.create({
 
   metricsRow: { flexDirection:'row', gap: 10, flexWrap:'wrap', marginBottom: 10 },
   metricChip: { paddingVertical:8, paddingHorizontal:12, backgroundColor:'rgba(255,255,255,0.7)', borderRadius: 9999 },
-  metricNum: { fontWeight:'800', color:'#6c6d6fff', fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
-  metricLabel: { color:'#475569', fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
+  metricNum: { fontWeight:'800', color:'#6c6d6fff' },
+  metricLabel: { color:'#475569' },
 
   noticeItem: { padding: 10, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.7)' },
-  noticeTime: { fontSize: 12, color: '#64748b', marginBottom: 4, fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
-  noticeMsg: { color: '#0f172a', fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
+  noticeTime: { fontSize: 12, color: '#64748b', marginBottom: 4 },
+  noticeMsg: { color: '#0f172a' },
 
   analyticsRow: { flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginTop: 12 },
   gaugeWrap: { alignItems:'center', justifyContent:'center' },
   gaugeCircle: { width: 80, height: 80, borderRadius: 40, borderWidth: 8, borderColor: '#60a5fa', alignItems:'center', justifyContent:'center', backgroundColor:'rgba(255,255,255,0.6)' },
-  gaugeText: { fontWeight:'800', color:'#0f172a', fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
+  gaugeText: { fontWeight:'800', color:'#0f172a' },
   donutRow: { flexDirection:'row', gap: 12 },
   donut: { width: 40, height: 40, borderRadius: 20, borderWidth: 6, backgroundColor:'transparent' },
 
   segmentRow: { flexDirection:'row', gap: 8, flexWrap:'wrap' },
   segmentBtn: { paddingVertical:6, paddingHorizontal:12, borderRadius: 9999, backgroundColor:'rgba(255,255,255,0.6)' },
   segmentActive: { backgroundColor:'rgba(139, 129, 129, 0.9)' },
-  segmentLabel: { color:'#0f172a', fontWeight:'700', fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
+  segmentLabel: { color:'#0f172a', fontWeight:'700' },
 
-  input: { padding: 10, backgroundColor:'rgba(255,255,255,0.8)', borderRadius: 10, color:'#0f172a', fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
-  webInput: { padding: 10, background: 'rgba(255, 255, 255, 1)', borderRadius: 10, border: '1px solid rgba(148,163,184,0.35)', fontFamily: 'Times New Roman, Times, serif' },
+  input: { padding: 10, backgroundColor:'rgba(255,255,255,0.8)', borderRadius: 10, color:'#0f172a' },
+  webInput: { padding: 10, background: 'rgba(255, 255, 255, 1)', borderRadius: 10, border: '1px solid rgba(148,163,184,0.35)' },
 
   // Table styles
   table: { width:'100%', borderRadius: 12, overflow:'hidden', ...Platform.select({ web: { border: '1px solid rgba(148,163,184,0.35)' }, default: {} }) },
-  tableHeader: { flexDirection:'row', backgroundColor:'rgba(0,0,0,0.05)', paddingVertical:12, paddingHorizontal:16 },
-  tableRow: { flexDirection:'row', backgroundColor:'rgba(0,0,0,0.02)', paddingVertical:12, paddingHorizontal:16, borderBottomWidth: Platform.OS==='web'?0:StyleSheet.hairlineWidth, borderBottomColor: 'rgba(148,163,184,0.25)' },
-  th: { color:'#334155', fontWeight:'800', fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
-  td: { color:'#0f172a', fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
+  tableHeader: { flexDirection:'row', backgroundColor:'rgba(255,255,255,0.8)', paddingVertical:12, paddingHorizontal:16 },
+  tableRow: { flexDirection:'row', backgroundColor:'rgba(255,255,255,0.6)', paddingVertical:12, paddingHorizontal:16, borderBottomWidth: Platform.OS==='web'?0:StyleSheet.hairlineWidth, borderBottomColor: 'rgba(148,163,184,0.25)' },
+  th: { color:'#334155', fontWeight:'800' },
+  td: { color:'#0f172a' },
 
   // Sidebar (filters)
   backdrop: Platform.select({ web: { position:'fixed', top:0, left:0, right:0, bottom:0, backgroundColor:'rgba(15,23,42,0.4)', zIndex:1000 }, default: { position:'absolute', top:0, left:0, right:0, bottom:0, backgroundColor:'rgba(15,23,42,0.4)', zIndex:1000 } }),
@@ -2785,69 +2026,28 @@ const styles = StyleSheet.create({
   select: { width:'100%', padding:8, border:'1px solid #d1d5db', borderRadius:4, marginBottom:8 },
   textInput: { width:'100%', padding:8, border:'1px solid #d1d5db', borderRadius:4, marginBottom:8 },
   hint: { fontSize:12, color:'#6b7280', marginTop:4 },
-  chartTitle: { fontSize:14, fontWeight:'700', color:'#0f172a', marginBottom:12, fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
+  chartTitle: { fontSize:14, fontWeight:'700', color:'#0f172a', marginBottom:12 },
   chartBar: { height:20, flexDirection:'row', backgroundColor:'rgba(148,163,184,0.25)', borderRadius:4, overflow:'hidden', marginBottom:4 },
   chartSegment: { height:'100%' },
-  chartLabel: { fontSize:12, color:'#475569', fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times' },
+  chartLabel: { fontSize:12, color:'#475569' },
 
   // History modal styles
   histBackdrop: { position:'fixed', top:0, left:0, right:0, bottom:0, backgroundColor:'rgba(0,0,0,0.5)', zIndex:2000, alignItems:'center', justifyContent:'center' },
-  histCard: { width:'90%', maxWidth: 1100, maxHeight: '90%', padding:16, borderRadius:16, backgroundColor:'#ffffff', ...Platform.select({ web: { overflowY:'auto' }, default: {} }) },
-  
+  histCard: { width:'90%', maxWidth: 1100, maxHeight: '90%', padding:16, borderRadius:16, backgroundColor:'rgba(104, 100, 100, 0.95)', ...Platform.select({ web: { overflowY:'auto' }, default: {} }) },
+ 
   // Export button styles
   exportButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#059669',
+    backgroundColor: '#10b981',
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 8,
     gap: 6,
   },
   exportButtonText: {
-    color: '#000',
+    color: '#fff',
     fontSize: 14,
     fontWeight: '600',
-    fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
-    width: Platform.OS === 'web' ? 500 : '90%',
-    maxWidth: 500,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#000',
-    fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times',
-  },
-  modalInput: {
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
-    padding: 12,
-    minHeight: 100,
-    textAlignVertical: 'top',
-    marginBottom: 16,
-    fontFamily: Platform.OS === 'web' ? 'Times New Roman, Times, serif' : 'Times',
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    gap: 12,
-    justifyContent: 'flex-end',
   },
 });
