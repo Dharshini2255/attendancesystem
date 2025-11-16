@@ -1014,6 +1014,8 @@ app.get('/admin/users', async (req, res) => {
   try {
     const { q } = req.query;
     let filter = {};
+
+    // Search filter
     if (q) {
       const re = new RegExp(q, 'i');
       const or = [
@@ -1029,48 +1031,92 @@ app.get('/admin/users', async (req, res) => {
       if (mongoose.Types.ObjectId.isValid(q)) or.push({ _id: q });
       filter = { $or: or };
     }
+
+    // Fetch students
     let users = await Student.find(filter).sort({ name: 1 }).lean();
-    
-    // Update loggedIn status based on actual activity (within last 30 minutes)
+
+    // Threshold for activity
     const now = new Date();
     const activeThreshold = new Date(now.getTime() - 30 * 60 * 1000); // 30 minutes
-    
-    // Get all recent pings in one query for efficiency
-    const recentPings = await Ping.find({ 
-      timestamp: { $gte: activeThreshold } 
+
+    // Recent pings (active users)
+    const recentPings = await Ping.find({
+      timestamp: { $gte: activeThreshold }
     }).select('studentId').lean();
+
     const activeStudentIds = new Set(recentPings.map(p => String(p.studentId)));
-    
-    // Batch update inactive users
+
+    // Track inactive users
     const inactiveUserIds = [];
+
     for (const u of users) {
       if (u.loggedIn) {
-        // Check if user has recent activity
         const hasRecentLogin = u.lastLoginAt && new Date(u.lastLoginAt) >= activeThreshold;
         const hasRecentPing = activeStudentIds.has(String(u._id));
-        
-        // If no recent activity, mark as offline
+
         if (!hasRecentLogin && !hasRecentPing) {
           inactiveUserIds.push(u._id);
           u.loggedIn = false;
         }
       }
     }
-    
-    // Batch update all inactive users
+
+    // Mark all inactive in DB
     if (inactiveUserIds.length > 0) {
       await Student.updateMany(
         { _id: { $in: inactiveUserIds } },
         { $set: { loggedIn: false } }
       );
     }
-    const safe = users.map(u => { const { password, ...rest } = u; return rest; });
-    res.json(safe);
+
+    // -----------------------------------------------------------
+    // NEW OFFLINE NOTIFICATION LOGIC 👇 (CORRECT POSITION)
+    // -----------------------------------------------------------
+
+    const offlineUserIds = [];
+
+    for (const u of users) {
+      const hasRecentLogin = u.lastLoginAt && new Date(u.lastLoginAt) >= activeThreshold;
+      const hasRecentPing = activeStudentIds.has(String(u._id));
+
+      if (!hasRecentLogin && !hasRecentPing && u.loggedIn) {
+        offlineUserIds.push(u._id);
+        u.loggedIn = false;
+      }
+    }
+
+    if (offlineUserIds.length > 0) {
+      for (const userId of offlineUserIds) {
+        const u = users.find(xx => String(xx._id) === String(userId));
+        if (!u) continue;
+
+        await Notification.create({
+          type: 'offline',
+          studentId: u._id,
+          studentName: u.name,
+          regNo: u.regNo,
+          message: `${u.name} (${u.regNo}) is now offline`,
+          at: new Date()
+        });
+      }
+    }
+
+    // -----------------------------------------------------------
+
+    // Remove password before sending
+    const safe = users.map(u => {
+      const { password, ...rest } = u;
+      return rest;
+    });
+
+    return res.json(safe);
+
   } catch (err) {
-    console.error('Admin users error:', err);
-    res.status(500).json({ error: 'Server error' });
+    console.error("Admin users error:", err);
+    return res.status(500).json({ error: "Server error" });
   }
 });
+
 
 // Attendance query: by date range and optional student, grouped by granularity
 app.get('/admin/attendance', async (req, res) => {
