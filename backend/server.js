@@ -1,17 +1,169 @@
-// ...existing code and models above...
+const express = require('express');
+const mongoose = require('mongoose');
+const dotenv = require('dotenv');
+const cors = require('cors');
+const bcrypt = require('bcryptjs');
 
-// Inside your /admin/users handler, near the batch offline marking logic:
-const offlineUserIds = [];
-for (const u of users) {
-  const hasRecentLogin = u.lastLoginAt && new Date(u.lastLoginAt) >= activeThreshold;
-  const hasRecentPing = activeStudentIds.has(String(u._id));
-  // If no recent activity and user was loggedIn
-  if (!hasRecentLogin && !hasRecentPing && u.loggedIn) {
-    inactiveUserIds.push(u._id);
-    u.loggedIn = false;
-    offlineUserIds.push(u._id);
+dotenv.config();
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// ------------------- MongoDB Connection -------------------
+mongoose.connect(process.env.MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+}).then(() => console.log("✅ MongoDB Connected"))
+  .catch(err => console.error("❌ MongoDB Connection Error:", err));
+
+// ------------------- Models -------------------
+const studentSchema = new mongoose.Schema({
+  name: String,
+  class: String,
+  year: Number,
+  regNo: { type: String, unique: true },
+  phone: String,
+  username: { type: String, unique: true },
+  email: { type: String, unique: true },
+  password: String,
+  uuid: { type: String, unique: true },
+  location: { latitude: Number, longitude: Number },
+  loggedIn: { type: Boolean, default: false },
+  lastLoginAt: { type: Date },
+  lastLogoutAt: { type: Date },
+  biometricEnrolled: { type: Boolean, default: false }
+});
+const Student = mongoose.model('Student', studentSchema);
+
+const attendanceSchema = new mongoose.Schema({
+  studentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Student' },
+  studentName: String,
+  regNo: String,
+  class: String,
+  year: Number,
+  date: String,
+  periods: [
+    {
+      periodNumber: Number,
+      status: { type: String, enum: ['present', 'absent'] }
+    }
+  ]
+}, { 
+  // Add unique constraint to prevent duplicate records
+  timestamps: true 
+});
+
+// Create compound index to prevent duplicate attendance records
+attendanceSchema.index({ studentId: 1, date: 1 }, { unique: true });
+const Attendance = mongoose.model("Attendance", attendanceSchema);
+
+const pingSchema = new mongoose.Schema({
+  studentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Student' },
+  studentName: String,
+  regNo: String,
+  periodNumber: Number,
+  timestampType: String,
+  location: {
+    latitude: Number,
+    longitude: Number
+  },
+  locationValid: { type: Boolean, default: false },
+  biometricType: { type: String, enum: ['fingerprint', 'face', null], default: null },
+  biometricVerified: { type: Boolean, default: false },
+  timestamp: { type: Date, default: Date.now }
+});
+const Ping = mongoose.model("Ping", pingSchema);
+
+const notificationSchema = new mongoose.Schema({
+  type: { type: String, enum: ['online', 'offline', 'locationOff', 'helpRequest', 'noPing'], required: true },
+  studentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Student' },
+  studentName: String,
+  regNo: String,
+  message: String,
+  at: { type: Date, default: Date.now },
+  read: { type: Boolean, default: false },
+  attendanceStatus: { type: String, enum: ['present', 'absent', null], default: null } // For help requests
+}, { timestamps: true });
+// Add index to prevent duplicates
+notificationSchema.index({ type: 1, studentId: 1, at: 1 }, { unique: false });
+const Notification = mongoose.model("Notification", notificationSchema);
+
+// Message/Reply system for admin-user communication
+const messageSchema = new mongoose.Schema({
+  studentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Student' },
+  studentName: String,
+  regNo: String,
+  sender: { type: String, enum: ['student', 'admin'], required: true },
+  message: String,
+  replyTo: { type: mongoose.Schema.Types.ObjectId, ref: 'Message', default: null }, // For threading
+  read: { type: Boolean, default: false },
+  at: { type: Date, default: Date.now }
+}, { timestamps: true });
+const Message = mongoose.model("Message", messageSchema);
+
+// ------------------- Validation Routes -------------------
+app.post('/check-student', async (req, res) => {
+  const { name, regNo } = req.body;
+  const student = await Student.findOne({ name, regNo });
+  res.json({ exists: !!student });
+});
+
+app.post('/check-username', async (req, res) => {
+  const { username } = req.body;
+  const user = await Student.findOne({ username });
+  res.json({ exists: !!user });
+});
+
+app.post('/check-email', async (req, res) => {
+  const { email } = req.body;
+  const user = await Student.findOne({ email });
+  res.json({ exists: !!user });
+});
+
+// ------------------- Signup Route -------------------
+app.post('/signup', async (req, res) => {
+  try {
+    const { name, regNo, class: className, year, phone, username, email, password, location, uuid } = req.body;
+
+    if (!name || !regNo || !className || !year || !phone || !username || !email || !password || !uuid) {
+      return res.status(400).json({ error: "All fields are required" });
+    }
+
+    const existsNameReg = await Student.findOne({ name, regNo });
+    if (existsNameReg) return res.status(400).json({ error: "Student already exists" });
+
+    const existsUsername = await Student.findOne({ username });
+    if (existsUsername) return res.status(400).json({ error: "Username already taken" });
+
+    const existsEmail = await Student.findOne({ email });
+    if (existsEmail) return res.status(400).json({ error: "Email already registered" });
+
+    const existsUuid = await Student.findOne({ uuid });
+    if (existsUuid) return res.status(400).json({ error: "UUID already registered" });
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const newUser = new Student({
+      name,
+      regNo,
+      class: className,
+      year,
+      phone,
+      username,
+      email,
+      password: hashedPassword,
+      location,
+      uuid,
+      biometricEnrolled: false
+    });
+
+    await newUser.save();
+    res.status(201).json({ message: "User registered successfully", user: newUser });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
   }
-<<<<<<< HEAD
 });
 
 // ------------------- Biometric Enroll -------------------
@@ -862,8 +1014,6 @@ app.get('/admin/users', async (req, res) => {
   try {
     const { q } = req.query;
     let filter = {};
-
-    // Search filter
     if (q) {
       const re = new RegExp(q, 'i');
       const or = [
@@ -879,92 +1029,48 @@ app.get('/admin/users', async (req, res) => {
       if (mongoose.Types.ObjectId.isValid(q)) or.push({ _id: q });
       filter = { $or: or };
     }
-
-    // Fetch students
     let users = await Student.find(filter).sort({ name: 1 }).lean();
-
-    // Threshold for activity
+    
+    // Update loggedIn status based on actual activity (within last 30 minutes)
     const now = new Date();
     const activeThreshold = new Date(now.getTime() - 30 * 60 * 1000); // 30 minutes
-
-    // Recent pings (active users)
-    const recentPings = await Ping.find({
-      timestamp: { $gte: activeThreshold }
+    
+    // Get all recent pings in one query for efficiency
+    const recentPings = await Ping.find({ 
+      timestamp: { $gte: activeThreshold } 
     }).select('studentId').lean();
-
     const activeStudentIds = new Set(recentPings.map(p => String(p.studentId)));
-
-    // Track inactive users
+    
+    // Batch update inactive users
     const inactiveUserIds = [];
-
     for (const u of users) {
       if (u.loggedIn) {
+        // Check if user has recent activity
         const hasRecentLogin = u.lastLoginAt && new Date(u.lastLoginAt) >= activeThreshold;
         const hasRecentPing = activeStudentIds.has(String(u._id));
-
+        
+        // If no recent activity, mark as offline
         if (!hasRecentLogin && !hasRecentPing) {
           inactiveUserIds.push(u._id);
           u.loggedIn = false;
         }
       }
     }
-
-    // Mark all inactive in DB
+    
+    // Batch update all inactive users
     if (inactiveUserIds.length > 0) {
       await Student.updateMany(
         { _id: { $in: inactiveUserIds } },
         { $set: { loggedIn: false } }
       );
     }
-
-    // -----------------------------------------------------------
-    // NEW OFFLINE NOTIFICATION LOGIC 👇 (CORRECT POSITION)
-    // -----------------------------------------------------------
-
-    const offlineUserIds = [];
-
-    for (const u of users) {
-      const hasRecentLogin = u.lastLoginAt && new Date(u.lastLoginAt) >= activeThreshold;
-      const hasRecentPing = activeStudentIds.has(String(u._id));
-
-      if (!hasRecentLogin && !hasRecentPing && u.loggedIn) {
-        offlineUserIds.push(u._id);
-        u.loggedIn = false;
-      }
-    }
-
-    if (offlineUserIds.length > 0) {
-      for (const userId of offlineUserIds) {
-        const u = users.find(xx => String(xx._id) === String(userId));
-        if (!u) continue;
-
-        await Notification.create({
-          type: 'offline',
-          studentId: u._id,
-          studentName: u.name,
-          regNo: u.regNo,
-          message: `${u.name} (${u.regNo}) is now offline`,
-          at: new Date()
-        });
-      }
-    }
-
-    // -----------------------------------------------------------
-
-    // Remove password before sending
-    const safe = users.map(u => {
-      const { password, ...rest } = u;
-      return rest;
-    });
-
-    return res.json(safe);
-
+    const safe = users.map(u => { const { password, ...rest } = u; return rest; });
+    res.json(safe);
   } catch (err) {
-    console.error("Admin users error:", err);
-    return res.status(500).json({ error: "Server error" });
+    console.error('Admin users error:', err);
+    res.status(500).json({ error: 'Server error' });
   }
 });
-
 
 // Attendance query: by date range and optional student, grouped by granularity
 app.get('/admin/attendance', async (req, res) => {
@@ -1267,29 +1373,257 @@ async function recomputeAttendanceFor(studentId, dateStr) {
   }
   attendance.periods = out;
   await attendance.save();
-=======
->>>>>>> 597bf77f9aa53a22f3007d7d3dca1512dc968875
 }
 
-if (inactiveUserIds.length > 0) {
-  await Student.updateMany(
-    { _id: { $in: inactiveUserIds } },
-    { $set: { loggedIn: false } }
-  );
+app.post('/admin/recompute-attendance', async (req, res) => {
+  try {
+    const { studentId, date } = req.body || {};
+    if (!studentId) return res.status(400).json({ error: 'studentId required' });
+    const d = date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    await recomputeAttendanceFor(studentId, d);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Admin recompute error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
 
-  // Create 'offline' notification for each just-offline user
-  const offlineUsers = users.filter(u => offlineUserIds.includes(u._id));
-  for (const u of offlineUsers) {
-    // Avoid flooding: only if they weren't just marked again seconds ago
-    await Notification.create({
-      type: 'offline',
-      studentId: u._id,
-      studentName: u.name,
-      regNo: u.regNo,
-      message: `${u.name} (${u.regNo}) is now offline`,
+// Attendance summaries
+app.get('/admin/attendance/summary', async (req, res) => {
+  try {
+    const { from, to, by = 'class' } = req.query;
+    const f = from || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    const t = to || f;
+    const records = await Attendance.find({ date: { $gte: f, $lte: t } }).lean();
+    const buckets = {};
+    for (const r of records) {
+      const key = by === 'year' ? r.year : r.class;
+      if (!buckets[key]) buckets[key] = { key, present: 0, absent: 0, students: new Set() };
+      for (const p of r.periods || []) {
+        if (p.status === 'present') buckets[key].present += 1; else buckets[key].absent += 1;
+      }
+      buckets[key].students.add(String(r.studentId));
+    }
+    const rows = Object.values(buckets).map(b => ({ key: b.key, present: b.present, absent: b.absent, uniqueStudents: b.students.size }));
+    res.json({ rows });
+  } catch (err) {
+    console.error('Attendance summary error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// CSV exports
+const toCsv = (rows, headers) => {
+  const esc = (v) => (v == null ? '' : String(v).replace(/"/g, '""'));
+  const h = headers.map(x => `"${x}"`).join(',');
+  const body = rows.map(r => headers.map(k => `"${esc(r[k])}"`).join(',')).join('\n');
+  return h + '\n' + body + '\n';
+};
+
+app.get('/admin/export/users.csv', async (req, res) => {
+  try {
+    const { q } = req.query;
+    let filter = {};
+    if (q) {
+      const re = new RegExp(q, 'i');
+      const or = [
+        { name: re },
+        { regNo: re },
+        { username: re },
+        { email: re },
+        { uuid: re },
+        { class: re },
+        { phone: re },
+      ];
+      if (!isNaN(Number(q))) or.push({ year: Number(q) });
+      if (mongoose.Types.ObjectId.isValid(q)) or.push({ _id: q });
+      filter = { $or: or };
+    }
+    const users = await Student.find(filter).sort({ name: 1 }).lean();
+    const rows = users.map(u => ({ name: u.name, regNo: u.regNo, class: u.class, year: u.year, phone: u.phone, username: u.username, email: u.email, uuid: u.uuid }));
+    const csv = toCsv(rows, ['name','regNo','class','year','phone','username','email','uuid']);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="users.csv"');
+    res.send(csv);
+  } catch (err) {
+    console.error('Export users error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/admin/export/attendance.csv', async (req, res) => {
+  try {
+    const { from, to, studentId, q } = req.query;
+    const f = from || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    const t = to || f;
+
+    let studentFilter = {};
+    if (q) {
+      const re = new RegExp(q, 'i');
+      const or = [
+        { name: re },
+        { regNo: re },
+        { username: re },
+        { email: re },
+        { uuid: re },
+        { class: re },
+        { phone: re },
+      ];
+      if (!isNaN(Number(q))) or.push({ year: Number(q) });
+      if (mongoose.Types.ObjectId.isValid(q)) or.push({ _id: q });
+      const matching = await Student.find({ $or: or }).select('_id').lean();
+      const ids = matching.map(s => s._id);
+      if (ids.length === 0) return res.send(toCsv([], ['date','studentName','regNo','periodNumber','status']));
+      studentFilter = { studentId: { $in: ids } };
+    }
+
+    const records = await Attendance.find({ ...(studentId ? { studentId } : {}), ...studentFilter, date: { $gte: f, $lte: t } }).lean();
+    const rows = [];
+    for (const r of records) {
+      for (const p of r.periods || []) {
+        rows.push({ date: r.date, studentName: r.studentName, regNo: r.regNo, periodNumber: p.periodNumber, status: p.status });
+      }
+    }
+    const csv = toCsv(rows, ['date','studentName','regNo','periodNumber','status']);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="attendance.csv"');
+    res.send(csv);
+  } catch (err) {
+    console.error('Export attendance error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Server-Sent Events for notifications
+app.get('/admin/notifications/stream', async (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+
+  const send = async () => {
+    try {
+      const ctrl = await AdminControl.findOne({ key: 'global' }).lean();
+      const settings = await AdminSettings.findOne({ key: 'global' }).lean();
+      const intervalMs = ctrl?.intervalMs || 60000;
+      const now = new Date();
+      const withinWindow = (() => {
+        if (!settings?.startTime || !settings?.endTime) return true;
+        const [sh, sm] = settings.startTime.split(':').map(Number);
+        const [eh, em] = settings.endTime.split(':').map(Number);
+        const m = now.getHours()*60 + now.getMinutes();
+        const a = sh*60+sm, b = eh*60+em;
+        return m >= a && m <= b;
+      })();
+      
+      // Get recent stored notifications (last 5 minutes)
+      const recentTime = new Date(now.getTime() - 5 * 60 * 1000);
+      const storedNotifications = await Notification.find({ at: { $gte: recentTime } })
+        .sort({ at: -1 })
+        .lean();
+      
+      const alerts = storedNotifications.map(n => ({
+        type: n.type,
+        studentId: String(n.studentId),
+        studentName: n.studentName,
+        regNo: n.regNo,
+        message: n.message,
+        at: n.at
+      }));
+      
+      if (ctrl?.pingEnabled && withinWindow) {
+        const since = new Date(now.getTime() - intervalMs * 2);
+        const students = await Student.find({}).select('name regNo username').lean();
+        for (const s of students) {
+          const last = await Ping.findOne({ studentId: s._id, timestamp: { $gte: since } }).sort({ timestamp: -1 }).lean();
+          if (!last) alerts.push({ type: 'noPing', studentId: String(s._id), studentName: s.name, regNo: s.regNo, message: `${s.name} (${s.regNo}) - No recent ping`, at: now });
+        }
+      }
+      
+      alerts.sort((a, b) => new Date(b.at) - new Date(a.at));
+      res.write(`data: ${JSON.stringify({ alerts })}\n\n`);
+    } catch (e) {
+      res.write(`data: ${JSON.stringify({ alerts: [], error: true })}\n\n`);
+    }
+  };
+
+  const iv = setInterval(send, 8000);
+  send();
+  req.on('close', () => clearInterval(iv));
+});
+
+// Message/Reply endpoints
+// Get messages for a student
+app.get('/messages/:studentId', async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    const messages = await Message.find({ studentId })
+      .sort({ at: 1 })
+      .lean();
+    res.json({ messages });
+  } catch (err) {
+    console.error('Get messages error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get all messages for admin
+app.get('/admin/messages', async (req, res) => {
+  try {
+    const messages = await Message.find({})
+      .sort({ at: -1 })
+      .limit(100)
+      .lean();
+    res.json({ messages });
+  } catch (err) {
+    console.error('Get admin messages error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Send message (student or admin)
+app.post('/messages/send', async (req, res) => {
+  try {
+    const { studentId, sender, message, replyTo } = req.body;
+    if (!studentId || !sender || !message) {
+      return res.status(400).json({ error: 'studentId, sender, and message are required' });
+    }
+
+    const student = await Student.findById(studentId);
+    if (!student) return res.status(404).json({ error: 'Student not found' });
+
+    const messageDoc = new Message({
+      studentId,
+      studentName: student.name,
+      regNo: student.regNo,
+      sender,
+      message,
+      replyTo: replyTo || null,
       at: new Date()
     });
-  }
-}
+    await messageDoc.save();
 
-// ...rest of existing logic remains unchanged...
+    res.json({ ok: true, message: messageDoc });
+  } catch (err) {
+    console.error('Send message error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Mark message as read
+app.patch('/messages/:messageId/read', async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    await Message.findByIdAndUpdate(messageId, { read: true });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Mark message read error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ------------------- Server Startup -------------------
+const PORT = process.env.PORT;
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
