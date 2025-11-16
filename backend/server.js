@@ -11,6 +11,7 @@ for (const u of users) {
     u.loggedIn = false;
     offlineUserIds.push(u._id);
   }
+<<<<<<< HEAD
 });
 
 // ------------------- Biometric Enroll -------------------
@@ -1266,6 +1267,8 @@ async function recomputeAttendanceFor(studentId, dateStr) {
   }
   attendance.periods = out;
   await attendance.save();
+=======
+>>>>>>> 597bf77f9aa53a22f3007d7d3dca1512dc968875
 }
 
 if (inactiveUserIds.length > 0) {
